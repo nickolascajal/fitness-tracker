@@ -658,6 +658,7 @@ export default function WorkoutPage() {
       setCount: exerciseMeta?.setCount ?? defaultSetCount,
       targetReps: exerciseMeta?.targetReps ?? 8,
       increment: exerciseMeta?.increment ?? 5,
+      setupType: exerciseMeta ? setupTypeFromExerciseType(exerciseMeta.type) : "reps",
       unit: exerciseMeta?.unit ?? "lbs",
       trackRir:
         exerciseMeta?.trackRir ??
@@ -708,7 +709,7 @@ export default function WorkoutPage() {
         sets: buildSetsFromExercise(configuredExercise.setCount).map(() => ({
           weight: "",
           reps: "",
-          timeSeconds: "",
+          timeSeconds: 0,
           rir: "",
           tir: "",
           rpe: ""
