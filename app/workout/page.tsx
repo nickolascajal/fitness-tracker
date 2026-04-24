@@ -981,6 +981,42 @@ export default function WorkoutPage() {
       });
     }
 
+    const workoutObject = {
+      workoutId,
+      exerciseId: selectedExercise.id,
+      exerciseName: selectedExercise.name,
+      workoutDate,
+      isDraft: false,
+      sets: setsSnapshotForStorage,
+      sessionVolume,
+      sessionCps,
+      progressionStage: stage ?? "—",
+      recommendation,
+      submittedAt
+    };
+
+    void (async () => {
+      try {
+        const {
+          data: { user }
+        } = await supabase.auth.getUser();
+
+        if (!user) return;
+
+        const { error } = await supabase.from("workouts").insert({
+          user_id: user.id,
+          date: workoutDate,
+          data: workoutObject
+        });
+
+        if (error) {
+          console.error("Supabase workout insert error:", error);
+        }
+      } catch (error) {
+        console.error("Supabase workout save failed:", error);
+      }
+    })();
+
     setSubmission({
       workoutId,
       exerciseId: selectedExercise.id,
