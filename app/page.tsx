@@ -7,8 +7,7 @@ export default function HomePage() {
         Track Your Training
       </h1>
       <p className="mx-auto max-w-xl text-slate-600 md:mx-0">
-        Manage your exercise library and log workout sessions. Data is kept in local
-        component state for now.
+        Track your workouts, manage your exercises, and see your progress over time.
       </p>
 
       <div className="mx-auto mt-1 flex w-full max-w-sm flex-col gap-3 min-[400px]:max-w-md min-[400px]:flex-row min-[400px]:flex-wrap min-[400px]:justify-center md:mx-0 md:mt-0 md:max-w-none md:justify-start">
