@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 type NavItem = {
   href: string;
@@ -9,14 +10,25 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
+  { href: "/auth", label: "Auth" },
   { href: "/library", label: "Your Library" },
   { href: "/workout", label: "Log a Workout" }
 ];
 
 export function TopNav() {
   const pathname = usePathname();
+  const router = useRouter();
 
   const isActive = (href: string) => pathname === href;
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Sign out error:", error);
+      return;
+    }
+    router.push("/auth");
+  };
 
   return (
     <nav className="flex gap-4 text-sm">
@@ -37,6 +49,13 @@ export function TopNav() {
           </Link>
         );
       })}
+      <button
+        type="button"
+        onClick={handleSignOut}
+        className="font-normal text-white/80 transition-colors hover:text-white md:text-slate-700 md:hover:text-slate-950"
+      >
+        Log out
+      </button>
     </nav>
   );
 }
