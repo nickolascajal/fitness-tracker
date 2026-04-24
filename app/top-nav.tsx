@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -18,8 +19,42 @@ const NAV_ITEMS: NavItem[] = [
 export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const isActive = (href: string) => pathname === href;
+
+  useEffect(() => {
+    const loadSession = async () => {
+      const {
+        data: { session },
+        error
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("Session check error:", error);
+        setIsLoggedIn(false);
+        return;
+      }
+
+      setIsLoggedIn(Boolean(session));
+    };
+
+    void loadSession();
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(Boolean(session));
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const visibleItems = isLoggedIn
+    ? NAV_ITEMS.filter((item) => item.href !== "/auth")
+    : NAV_ITEMS.filter((item) => item.href === "/auth");
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -32,7 +67,7 @@ export function TopNav() {
 
   return (
     <nav className="flex gap-4 text-sm">
-      {NAV_ITEMS.map((item) => {
+      {visibleItems.map((item) => {
         const active = isActive(item.href);
         return (
           <Link
@@ -49,13 +84,15 @@ export function TopNav() {
           </Link>
         );
       })}
-      <button
-        type="button"
-        onClick={handleSignOut}
-        className="font-normal text-white/80 transition-colors hover:text-white md:text-slate-700 md:hover:text-slate-950"
-      >
-        Log out
-      </button>
+      {isLoggedIn ? (
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="font-normal text-white/80 transition-colors hover:text-white md:text-slate-700 md:hover:text-slate-950"
+        >
+          Log out
+        </button>
+      ) : null}
     </nav>
   );
 }

@@ -53,7 +53,11 @@ export default function AuthPage() {
 
     if (error) {
       console.error("Sign up error:", error);
-      setMessage("Unable to sign up. Please try again.");
+      if (error.message.includes("User already registered")) {
+        setMessage("This email is already registered. Try logging in instead.");
+      } else {
+        setMessage("Something went wrong. Please try again.");
+      }
       setLoading(false);
       return;
     }
@@ -80,7 +84,11 @@ export default function AuthPage() {
 
     if (error) {
       console.error("Log in error:", error);
-      setMessage("Unable to log in. Please check your credentials.");
+      if (error.message.includes("Invalid login credentials")) {
+        setMessage("Incorrect email or password.");
+      } else {
+        setMessage("Something went wrong. Please try again.");
+      }
       setLoading(false);
       return;
     }

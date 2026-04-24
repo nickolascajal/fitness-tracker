@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, type ChangeEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useExercises, type WorkoutPreset } from "@/app/exercises-provider";
 import { useWorkoutHistory } from "@/app/workout-history-provider";
 import { EXERCISES_BY_LETTER } from "@/lib/exercises";
 import { exerciseDuplicateKey } from "@/lib/exerciseNameKey";
 import { createBackupSnapshot, restoreBackupSnapshot, validateBackupSnapshot } from "@/lib/storage";
+import { supabase } from "@/lib/supabaseClient";
 
 type LibraryTab = "used" | "created" | "presets";
 
@@ -41,8 +43,11 @@ function allMasterNameSet(): Set<string> {
 }
 
 export default function LibraryPage() {
+  const router = useRouter();
   const { exercises, presets, addExercise, addPreset, updatePreset, removePresets } = useExercises();
   const { historyByExerciseId } = useWorkoutHistory();
+  const [authChecked, setAuthChecked] = useState(false);
+  const [allowed, setAllowed] = useState(false);
   const [tab, setTab] = useState<LibraryTab>("used");
   const [showCreateExercise, setShowCreateExercise] = useState(false);
   const [form, setForm] = useState<ExerciseForm>(initialForm);
@@ -71,6 +76,26 @@ export default function LibraryPage() {
   const [backupImportConfirmOpen, setBackupImportConfirmOpen] = useState(false);
   const [backupImportBusy, setBackupImportBusy] = useState(false);
   const [dataBackupOpen, setDataBackupOpen] = useState(false);
+
+  useEffect(() => {
+    const guardRoute = async () => {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/auth");
+        setAllowed(false);
+        setAuthChecked(true);
+        return;
+      }
+
+      setAllowed(true);
+      setAuthChecked(true);
+    };
+
+    void guardRoute();
+  }, [router]);
 
   const resetPresetBuilder = () => {
     setPresetPanelMode("list");
@@ -335,6 +360,10 @@ export default function LibraryPage() {
     }
     window.location.reload();
   };
+
+  if (!authChecked || !allowed) {
+    return null;
+  }
 
   return (
     <section className="space-y-5 pt-1 md:pt-6">

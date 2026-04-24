@@ -559,6 +559,52 @@ RIR/RPE behavior:
   - `app/workout-history-provider.tsx` -> `normalizeWorkoutEntry(...)` persists/reads `timeSeconds`
   - legacy snapshot field `time` is parsed into `timeSeconds` for compatibility
 
+## Authentication + Backend Integration v1
+
+- Supabase package is installed (`@supabase/supabase-js`).
+- Shared client utility exists at `lib/supabaseClient.ts`.
+- Client reads:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `lib/supabaseClient.ts` includes explicit runtime checks and clear error messages when either env var is missing.
+- `.env.local` is used for local development; Vercel Environment Variables are used in production.
+- `NEXT_PUBLIC_SUPABASE_URL` must be the base project URL only (for example `https://<project-ref>.supabase.co`) with no extra path segments such as `/rest/v1` or `/auth/v1`.
+- Do not expose Supabase secret/service-role keys in client code or logs.
+
+Auth routes and flows:
+
+- Auth route exists at `app/auth/page.tsx`.
+- Supports email/password signup and login through Supabase Auth:
+  - `supabase.auth.signUp(...)`
+  - `supabase.auth.signInWithPassword(...)`
+- Signup behavior currently follows Supabase project settings:
+  - when email confirmation is disabled, signup can immediately create a session.
+- Logout is available in top navigation via `supabase.auth.signOut()`.
+- Auth flow works locally and on Vercel deployment.
+
+Route protection status:
+
+- Auth guards now protect:
+  - `/` (`app/page.tsx`)
+  - `/workout` (`app/workout/page.tsx`)
+  - `/library` (`app/library/page.tsx`)
+- Guard implementation uses `supabase.auth.getSession()` in `useEffect` and redirects logged-out users to `/auth`.
+- Workout hook-order regression was encountered during initial guard integration; current implementation is refactored so hook order remains stable (no early return before hook declarations).
+- Existing workout logic/CPS/localStorage behavior remains unchanged by auth guard work.
+
+Storage and backend scope (current):
+
+- Supabase is currently used for auth + client connection only.
+- Workout/exercise/preset data remains in localStorage.
+- No workout-data migration to Supabase yet.
+
+Deployment notes:
+
+- App is deployed on Vercel.
+- Supabase env vars are configured in Vercel.
+- Redeploy is required after production env-var changes.
+- Current deployed auth works; keep guard/auth updates in sync with pushed commits.
+
 ## Next Goals
 
 * [ ] multi-exercise workouts

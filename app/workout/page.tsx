@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
 import { generateRecommendation } from "@/lib/generateRecommendation";
@@ -12,6 +13,7 @@ import { useExercises, type Exercise } from "@/app/exercises-provider";
 import { type WorkoutHistoryEntry, useWorkoutHistory } from "@/app/workout-history-provider";
 import { WorkoutDateNavigation } from "@/app/workout/WorkoutDateNavigation";
 import { isYmdInWorkoutRange } from "@/app/workout/workoutDateNavUtils";
+import { supabase } from "@/lib/supabaseClient";
 
 type SetLog = {
   weight: string;
@@ -461,6 +463,7 @@ function cpsDayOverviewTrendIndicator(trend: "up" | "flat" | "down"): {
 }
 
 export default function WorkoutPage() {
+  const router = useRouter();
   const { exercises, presets, addExercise, clearExercises } = useExercises();
   const {
     historyByExerciseId,
@@ -508,6 +511,28 @@ export default function WorkoutPage() {
   const [dayOverviewDeleteConfirmOpen, setDayOverviewDeleteConfirmOpen] = useState(false);
   const [restDayToggleWarning, setRestDayToggleWarning] = useState<string | null>(null);
   const [isRestDayToggleWarningVisible, setIsRestDayToggleWarningVisible] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    const guardRoute = async () => {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/auth");
+        setAllowed(false);
+        setAuthChecked(true);
+        return;
+      }
+
+      setAllowed(true);
+      setAuthChecked(true);
+    };
+
+    void guardRoute();
+  }, [router]);
 
   const exitDayOverviewSelectMode = () => {
     setDayOverviewSelectMode(false);
@@ -1377,6 +1402,10 @@ export default function WorkoutPage() {
     setRestDayToggleWarning(null);
     setIsRestDayToggleWarningVisible(false);
   }, [selectedWorkoutDate]);
+
+  if (!authChecked || !allowed) {
+    return null;
+  }
 
   return (
     <section className="space-y-5 pt-1 md:pt-6">

@@ -1,6 +1,35 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function HomePage() {
+  const router = useRouter();
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  useEffect(() => {
+    const guardRoute = async () => {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/auth");
+        return;
+      }
+
+      setIsAuthorized(true);
+    };
+
+    void guardRoute();
+  }, [router]);
+
+  if (!isAuthorized) {
+    return null;
+  }
+
   return (
     <section className="mx-auto flex min-h-[70vh] w-full max-w-xl flex-col items-center justify-center space-y-5 pt-1 text-center sm:space-y-6 md:min-h-0 md:max-w-none md:items-start md:justify-start md:space-y-6 md:pt-6 md:text-left">
       <h1 className="text-3xl font-bold tracking-tight text-slate-900">
