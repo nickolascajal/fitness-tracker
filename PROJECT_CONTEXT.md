@@ -689,6 +689,7 @@ Deployment notes:
   - `/admin` — aggregate totals and per-user counts; link to per-user detail.
   - `/admin/user/[userId]` — workout history for one user, grouped by date, with sets, CPS, recommendations, and timestamps (parsed from `workouts.data` JSON).
 - **Access control (server-side):**
+  - Root `middleware.ts` refreshes Supabase session cookies on matched requests so Server Components see a valid session in production. The middleware’s **beta** rule sends unauthenticated users from internal app routes (`/workout`, `/library`, `/profile`, `/exercise`, and nested paths) to `/`; **`/admin` and `/admin/*` are excluded** from that redirect so requests always reach `requireAdmin()` (which still redirects logged-out users to `/` and non-admins to `/workout`).
   - Uses `@supabase/ssr` `createServerClient` + `cookies()` to read the signed-in user on the server (`lib/admin/supabaseServer.ts`).
   - Email must match server env `ADMIN_EMAIL` (case-insensitive). If `ADMIN_EMAIL` is unset, admin routes redirect to `/`.
   - Logged-out visitors to `/admin` → redirect to `/`.
