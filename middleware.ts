@@ -2,19 +2,17 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Refreshes Supabase auth cookies on every matched request so Server Components
- * (including `/admin`) can read a valid session in production.
+ * Refreshes Supabase auth cookies on matched requests so Server Components
+ * (including `/admin`) see a valid session in production.
  *
- * Beta routing: unauthenticated users hitting internal app routes are sent to `/`,
- * except `/admin` and `/admin/*` — those always reach `requireAdmin()` (which
- * redirects logged-out users to `/` and non-admins to `/workout`).
+ * Beta routing: unauthenticated users on internal app routes → `/`, except
+ * `/admin` (handled by `requireAdmin()`).
+ *
+ * Matcher is an allowlist of app paths only so we never touch `/_next/*`,
+ * static files, or other internals (fixes broken client navigation).
  */
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request: {
-      headers: request.headers
-    }
-  });
+  const supabaseResponse = NextResponse.next();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -30,15 +28,8 @@ export async function middleware(request: NextRequest) {
       setAll(
         cookiesToSet: { name: string; value: string; options: CookieOptions }[]
       ) {
-        cookiesToSet.forEach(({ name, value }) => {
-          request.cookies.set(name, value);
-        });
-        supabaseResponse = NextResponse.next({
-          request: {
-            headers: request.headers
-          }
-        });
         cookiesToSet.forEach(({ name, value, options }) => {
+          request.cookies.set(name, value);
           supabaseResponse.cookies.set(name, value, options);
         });
       }
@@ -85,9 +76,15 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except static assets and image optimization.
-     */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    "/",
+    "/login",
+    "/signup",
+    "/auth",
+    "/auth/:path*",
+    "/workout/:path*",
+    "/library/:path*",
+    "/profile/:path*",
+    "/exercise/:path*",
+    "/admin/:path*"
   ]
 };
