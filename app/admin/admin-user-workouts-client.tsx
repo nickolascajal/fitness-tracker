@@ -81,13 +81,16 @@ export function AdminUserWorkoutsClient({
       }
 
       const {
-        data: { user },
-        error
-      } = await supabase.auth.getUser();
+        data: { session },
+        error: sessionError
+      } = await supabase.auth.getSession();
 
       if (cancelled) return;
 
-      if (error || !user?.email) {
+      const accessToken = session?.access_token;
+      const user = session?.user;
+
+      if (sessionError || !user?.email || !accessToken) {
         setPhase("login");
         return;
       }
@@ -98,7 +101,7 @@ export function AdminUserWorkoutsClient({
       }
 
       setPhase("loading");
-      const res = await fetchAdminUserWorkoutsAction(userId);
+      const res = await fetchAdminUserWorkoutsAction(userId, accessToken);
       if (cancelled) return;
 
       if (!res.ok) {
