@@ -130,7 +130,9 @@ async function findRowIdByEntityId(
     }
     if (!payload || typeof payload !== "object") return false;
     if (table === "workouts") {
-      return (payload as { workoutId?: unknown }).workoutId === entityId;
+      const workoutId = (payload as { workoutId?: unknown }).workoutId;
+      const id = (payload as { id?: unknown }).id;
+      return workoutId === entityId || id === entityId;
     }
     const id = (payload as { id?: unknown }).id;
     const presetId = (payload as { presetId?: unknown }).presetId;
@@ -156,14 +158,37 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
     if (!workoutId) return "stale";
     if (item.action === "insert") {
       const existingId = await findRowIdByEntityId(supabase, "workouts", userId, workoutId);
-      if (existingId) return "success";
+      if (existingId) {
+        if (!payload.entry) return "stale";
+        console.log("Workout sync existing row found — updating", { workoutId, rowId: existingId, id: item.id });
+        const { error } = await supabase
+          .from("workouts")
+          .update({ data: payload.entry, date: payload.date })
+          .eq("id", existingId)
+          .eq("user_id", userId);
+        if (error) return "retry";
+        console.log("Workout sync duplicate prevention complete", { workoutId, action: "update", id: item.id });
+        return "success";
+      }
       if (!payload.entry) return "stale";
+      console.log("Workout sync no row found — inserting", { workoutId, id: item.id });
       const rowDate = typeof payload.date === "string" ? payload.date : (payload.entry.workoutDate as string | undefined);
       const { error } = await supabase.from("workouts").insert({ user_id: userId, date: rowDate, data: payload.entry });
-      return error ? "retry" : "success";
+      if (error) return "retry";
+      console.log("Workout sync duplicate prevention complete", { workoutId, action: "insert", id: item.id });
+      return "success";
     }
     const rowId = await findRowIdByEntityId(supabase, "workouts", userId, workoutId);
     if (!rowId) {
+      if (item.action === "update") {
+        if (!payload.entry) return "stale";
+        console.log("Workout sync no row found — inserting", { workoutId, id: item.id });
+        const rowDate = typeof payload.date === "string" ? payload.date : (payload.entry.workoutDate as string | undefined);
+        const { error } = await supabase.from("workouts").insert({ user_id: userId, date: rowDate, data: payload.entry });
+        if (error) return "retry";
+        console.log("Workout sync duplicate prevention complete", { workoutId, action: "insert", id: item.id });
+        return "success";
+      }
       if (item.action === "delete") {
         console.log("Workout delete resolved: remote row missing", { workoutId, id: item.id });
       }
@@ -171,11 +196,18 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
     }
     if (item.action === "update") {
       if (!payload.entry) return "stale";
+      console.log("Workout sync existing row found — updating", { workoutId, rowId, id: item.id });
       const { error } = await supabase
         .from("workouts")
         .update({ data: payload.entry, date: payload.date })
         .eq("id", rowId)
         .eq("user_id", userId);
+      if (error) return "retry";
+      console.log("Workout sync duplicate prevention complete", { workoutId, action: "update", id: item.id });
+      return "success";
+    }
+    if (item.action === "delete" && payload.all === true) {
+      const { error } = await supabase.from("workouts").delete().eq("user_id", userId);
       return error ? "retry" : "success";
     }
     console.log("Workout delete remote row found", { workoutId, rowId, id: item.id });
@@ -233,6 +265,10 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
       .update({ data: payload.preset })
       .eq("id", rowId)
       .eq("user_id", userId);
+    return error ? "retry" : "success";
+  }
+  if (item.action === "delete" && payload.all === true) {
+    const { error } = await supabase.from("presets").delete().eq("user_id", userId);
     return error ? "retry" : "success";
   }
   if (!presetId) return "stale";

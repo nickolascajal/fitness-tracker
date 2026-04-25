@@ -715,6 +715,13 @@ Deployment notes:
     - `removeWorkoutsFromDate` now triggers a delete path that always attempts remote workout deletion by current `user_id` + `data.workoutId` when online.
     - if an unresolved pending workout insert exists for the same `workoutId`, that insert is removed first; online delete still checks Supabase row existence and deletes if found.
     - offline delete queues only when appropriate (no unresolved insert to cancel), preventing useless delete jobs for rows Supabase never had.
+  - workout duplicate prevention / idempotent sync:
+    - workout create/update sync now uses upsert-by-workout identifier semantics:
+      - lookup by `user_id` + (`data.workoutId == workoutId` OR fallback `data.id == workoutId`)
+      - if found: update `data` + `date`
+      - if not found: insert
+    - applies across normal submit, draft creation, draft submit (`updateWorkoutEntry` path), and pending sync flush (`insert` and `update` actions).
+    - this prevents multiple Supabase rows for the same workout id per user.
 - Retry behavior:
   - each provider runs a **mount-only** `useEffect` (empty dependency array) that subscribes to `online` and `onAuthStateChange` and calls centralized `flushPendingSyncQueue(...)`.
   - pending sync flush uses `lib/pendingSyncAuth.ts` (prefer `getSession()` then `getUser()`) with auth/session checks **inside** the flush function, not in the effect.
@@ -742,6 +749,10 @@ Deployment notes:
     - `Offline/auth check failed — queued pending sync`
     - `Pending sync item queued`
     - `Pending sync flush started` / `Pending sync flush finished`
+    - workout idempotent sync diagnostics:
+      - `Workout sync existing row found — updating`
+      - `Workout sync no row found — inserting`
+      - `Workout sync duplicate prevention complete`
     - workout delete diagnostics:
       - `Workout delete sync started`
       - `Workout delete remote row found`
@@ -772,6 +783,11 @@ Deployment notes:
     - creating draft workouts (`isDraft: true`) in day overview queues workout pending inserts immediately when offline (`Offline draft workout queued`)
     - while online, draft creation attempts remote insert (`Draft workout Supabase insert/update attempted`)
     - submitting an existing draft now syncs by `workoutId` using update-when-found / insert-when-missing to avoid duplicate remote rows
+  - clear-all behavior:
+    - `Clear All Saved Data` now clears local/in-memory data for exercises, presets, workout history, `restByDate`, and `finishedByDate` immediately.
+    - clear-all now also triggers remote deletion for current user rows in `workouts`, `exercises`, and `presets`.
+    - if remote clear fails (or app is offline), clear-all queues pending delete-all items instead of silently leaving remote data.
+    - clear-all resets the pending sync queue before applying clear operations, so stale prior operations do not repopulate cleared state.
 
 ## Next Goals
 

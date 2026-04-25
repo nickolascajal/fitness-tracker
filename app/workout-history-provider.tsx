@@ -389,7 +389,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
     };
   }, [storageHydrated]);
 
-  /** Resolves the Supabase row primary key for a local workout, matching `data.workoutId`. */
+  /** Resolves the Supabase row primary key for a local workout, matching `data.workoutId` or fallback `data.id`. */
   const findSupabaseWorkoutRowId = useCallback(async (userId: string, workoutId: string) => {
     const { data: rows, error } = await supabase
       .from("workouts")
@@ -413,18 +413,64 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
           payload = null;
         }
       }
-      const candidate =
+      const candidateWorkoutId =
         payload &&
         typeof payload === "object" &&
         "workoutId" in payload &&
         typeof (payload as { workoutId?: unknown }).workoutId === "string"
           ? (payload as { workoutId: string }).workoutId
           : "";
-      return candidate === workoutId;
+      const candidateId =
+        payload &&
+        typeof payload === "object" &&
+        "id" in payload &&
+        typeof (payload as { id?: unknown }).id === "string"
+          ? (payload as { id: string }).id
+          : "";
+      return candidateWorkoutId === workoutId || candidateId === workoutId;
     });
 
     return matched?.id != null ? String(matched.id) : null;
   }, []);
+
+  const syncWorkoutUpsertToSupabase = useCallback(
+    async (userId: string, entry: WorkoutHistoryEntry): Promise<boolean> => {
+      const rowId = await findSupabaseWorkoutRowId(userId, entry.workoutId);
+      if (rowId) {
+        console.log("Workout sync existing row found — updating", {
+          workoutId: entry.workoutId,
+          rowId
+        });
+        const { error } = await supabase
+          .from("workouts")
+          .update({ data: entry, date: entry.workoutDate })
+          .eq("id", rowId)
+          .eq("user_id", userId);
+        if (error) return false;
+        console.log("Workout sync duplicate prevention complete", {
+          workoutId: entry.workoutId,
+          action: "update"
+        });
+        return true;
+      }
+
+      console.log("Workout sync no row found — inserting", {
+        workoutId: entry.workoutId
+      });
+      const { error } = await supabase.from("workouts").insert({
+        user_id: userId,
+        date: entry.workoutDate,
+        data: entry
+      });
+      if (error) return false;
+      console.log("Workout sync duplicate prevention complete", {
+        workoutId: entry.workoutId,
+        action: "insert"
+      });
+      return true;
+    },
+    [findSupabaseWorkoutRowId]
+  );
 
   const syncUpdatedWorkoutToSupabase = useCallback(
     async (entry: WorkoutHistoryEntry) => {
@@ -443,21 +489,9 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        const rowId = await findSupabaseWorkoutRowId(user.id, entry.workoutId);
-        if (!rowId) {
-          console.warn("No Supabase row found for workoutId", entry.workoutId);
-          addPendingSyncItem(pendingItem);
-          return;
-        }
-
-        const { error } = await supabase
-          .from("workouts")
-          .update({ data: entry })
-          .eq("id", rowId)
-          .eq("user_id", user.id);
-
-        if (error) {
-          console.error("Supabase workout update failed", error);
+        const ok = await syncWorkoutUpsertToSupabase(user.id, entry);
+        if (!ok) {
+          console.error("Supabase workout update/upsert failed");
           addPendingSyncItem(pendingItem);
         }
       } catch (error) {
@@ -465,7 +499,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         addPendingSyncItem(pendingItem);
       }
     },
-    [findSupabaseWorkoutRowId]
+    [syncWorkoutUpsertToSupabase]
   );
 
   const syncDeletedWorkoutToSupabase = useCallback(
@@ -633,34 +667,15 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!user) return;
-        const rowId = await findSupabaseWorkoutRowId(user.id, normalized.workoutId);
-        if (rowId) {
-          const { error } = await supabase
-            .from("workouts")
-            .update({ data: normalized, date: normalized.workoutDate })
-            .eq("id", rowId)
-            .eq("user_id", user.id);
-          if (error) {
-            addPendingSyncItem({
-              ...pendingItem,
-              action: "update"
-            });
-          }
-          return;
-        }
-        const { error } = await supabase.from("workouts").insert({
-          user_id: user.id,
-          date: normalized.workoutDate,
-          data: normalized
-        });
-        if (error) {
+        const ok = await syncWorkoutUpsertToSupabase(user.id, normalized);
+        if (!ok) {
           addPendingSyncItem(pendingItem);
         }
       } catch {
         addPendingSyncItem(pendingItem);
       }
     })();
-  }, [findSupabaseWorkoutRowId]);
+  }, [syncWorkoutUpsertToSupabase]);
 
   const isDateMarkedRest = useCallback(
     (date: string) => Boolean(restByDate[date]),
@@ -800,9 +815,47 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
   );
 
   const clearWorkoutHistory = useCallback(() => {
+    console.log("clearWorkoutHistory mutation called");
     setEntriesByDate({});
     setRestByDate({});
     setFinishedByDate({});
+
+    void (async () => {
+      const pendingItem = {
+        type: "workout" as const,
+        action: "delete" as const,
+        payload: { all: true }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        console.log("Pending delete queued", { type: "workout", all: true });
+        addPendingSyncItem(pendingItem);
+        return;
+      }
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser();
+        if (userError && isOfflineAuthFailure(userError)) {
+          console.log("Pending delete queued", { type: "workout", all: true });
+          addPendingSyncItem(pendingItem);
+          return;
+        }
+        if (!user) return;
+        const { error } = await supabase.from("workouts").delete().eq("user_id", user.id);
+        if (error) {
+          console.error("Supabase clear workouts failed", error);
+          console.log("Pending delete queued", { type: "workout", all: true });
+          addPendingSyncItem(pendingItem);
+          return;
+        }
+        console.log("Clear all Supabase workouts complete");
+      } catch (error) {
+        console.error("Supabase clear workouts failed", error);
+        console.log("Pending delete queued", { type: "workout", all: true });
+        addPendingSyncItem(pendingItem);
+      }
+    })();
   }, []);
 
   return (

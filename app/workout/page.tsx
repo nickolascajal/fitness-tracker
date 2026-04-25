@@ -6,6 +6,7 @@ import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
 import { generateRecommendation } from "@/lib/generateRecommendation";
 import { removeAllFitnessKeys } from "@/lib/storage";
+import { savePendingSyncQueue } from "@/lib/pendingSync";
 import { EXERCISES_BY_LETTER, getMasterExerciseByName } from "@/lib/exercises";
 import { findExerciseWithSameNameAndConfig } from "@/lib/exerciseConfigMatch";
 import { exerciseDuplicateKey, exerciseNameKey } from "@/lib/exerciseNameKey";
@@ -464,7 +465,7 @@ function cpsDayOverviewTrendIndicator(trend: "up" | "flat" | "down"): {
 
 export default function WorkoutPage() {
   const router = useRouter();
-  const { exercises, presets, addExercise, clearExercises } = useExercises();
+  const { exercises, presets, addExercise, clearExercises, clearPresets } = useExercises();
   const {
     historyByExerciseId,
     getWorkoutsByDate,
@@ -1288,9 +1289,13 @@ export default function WorkoutPage() {
   };
 
   const clearAllData = () => {
+    console.log("Clear all data started");
+    savePendingSyncQueue([]);
     removeAllFitnessKeys();
     clearExercises();
+    clearPresets();
     clearWorkoutHistory();
+    console.log("Clear all local data complete");
     exitDayOverviewSelectMode();
     calendarFirstTapYmdRef.current = null;
     setIsDayExercisesListOpen(true);
@@ -1310,6 +1315,7 @@ export default function WorkoutPage() {
     setConfigEditForm(buildSetupDefaults());
     setExerciseSearchQuery("");
     setSetupForm(buildSetupDefaults());
+    console.log("Clear all data complete");
   };
 
   const handleClearAllData = () => {

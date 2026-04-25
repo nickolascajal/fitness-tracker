@@ -71,6 +71,7 @@ type ExercisesContextValue = {
   addPreset: (data: Omit<WorkoutPreset, "id" | "createdAt">) => WorkoutPreset;
   updatePreset: (presetId: string, updater: (preset: WorkoutPreset) => WorkoutPreset) => void;
   removePresets: (presetIds: string[]) => void;
+  clearPresets: () => void;
   clearExercises: () => void;
 };
 
@@ -777,6 +778,7 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
   }, [enqueuePendingSyncItem]);
 
   const clearExercises = useCallback(() => {
+    console.log("clearExercises mutation called");
     setExercises([]);
 
     void (async () => {
@@ -792,20 +794,70 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
       }
       try {
         const {
-          data: { user }
+          data: { user },
+          error: userError
         } = await supabase.auth.getUser();
+        if (userError && isOfflineAuthFailure(userError)) {
+          console.log("Pending delete queued", { type: "exercise", all: true });
+          enqueuePendingSyncItem(pendingItem);
+          return;
+        }
         if (!user) return;
         const { error } = await supabase.from("exercises").delete().eq("user_id", user.id);
         if (error) {
           console.error("Supabase exercise delete failed", error);
           console.log("Pending delete queued", { type: "exercise", all: true });
           enqueuePendingSyncItem(pendingItem);
+          return;
         }
+        console.log("Clear all Supabase exercises complete");
       } catch (error) {
         console.error("Supabase exercise delete failed", error);
         if (isOfflineAuthFailure(error)) {
           console.log("Pending delete queued", { type: "exercise", all: true });
         }
+        enqueuePendingSyncItem(pendingItem);
+      }
+    })();
+  }, [enqueuePendingSyncItem]);
+
+  const clearPresets = useCallback(() => {
+    console.log("clearPresets mutation called");
+    setPresets([]);
+
+    void (async () => {
+      const pendingItem = {
+        type: "preset" as const,
+        action: "delete" as const,
+        payload: { all: true }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        console.log("Pending delete queued", { type: "preset", all: true });
+        enqueuePendingSyncItem(pendingItem);
+        return;
+      }
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser();
+        if (userError && isOfflineAuthFailure(userError)) {
+          console.log("Pending delete queued", { type: "preset", all: true });
+          enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        if (!user) return;
+        const { error } = await supabase.from("presets").delete().eq("user_id", user.id);
+        if (error) {
+          console.error("Supabase preset delete failed", error);
+          console.log("Pending delete queued", { type: "preset", all: true });
+          enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        console.log("Clear all Supabase presets complete");
+      } catch (error) {
+        console.error("Supabase preset delete failed", error);
+        console.log("Pending delete queued", { type: "preset", all: true });
         enqueuePendingSyncItem(pendingItem);
       }
     })();
@@ -867,6 +919,7 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         addPreset,
         updatePreset,
         removePresets,
+        clearPresets,
         clearExercises
       }}
     >
