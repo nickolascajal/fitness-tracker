@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+/** Temporary: admin routes disabled until SSR auth/middleware is reworked. Dashboard code remains under `app/admin/`. */
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return <div className="min-h-screen bg-slate-50 px-4 pb-12">{children}</div>;
+  void children;
+  redirect("/");
 }
