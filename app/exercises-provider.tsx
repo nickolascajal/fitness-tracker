@@ -526,13 +526,14 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
       });
 
       if (!updatedPreset) return;
+      const presetToSync: WorkoutPreset = updatedPreset;
       void (async () => {
         try {
           console.log("Supabase preset update start");
-          console.log("updatedPreset id:", updatedPreset.id);
+          console.log("updatedPreset id:", presetToSync.id);
           console.log("updatedPreset first exercise setCount/targetReps:", {
-            setCount: updatedPreset.exercises[0]?.setCount ?? null,
-            targetReps: updatedPreset.exercises[0]?.targetReps ?? null
+            setCount: presetToSync.exercises[0]?.setCount ?? null,
+            targetReps: presetToSync.exercises[0]?.targetReps ?? null
           });
 
           const {
@@ -566,10 +567,10 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
               typeof (payload as { presetId?: unknown }).presetId === "string"
                 ? (payload as { presetId: string }).presetId
                 : "";
-            const updatedPresetId = updatedPreset?.id ?? "";
+            const updatedPresetId = presetToSync.id;
             const updatedPresetLegacyId =
-              typeof (updatedPreset as { presetId?: unknown } | null)?.presetId === "string"
-                ? ((updatedPreset as { presetId: string }).presetId ?? "")
+              typeof (presetToSync as WorkoutPreset & { presetId?: unknown }).presetId === "string"
+                ? ((presetToSync as WorkoutPreset & { presetId: string }).presetId ?? "")
                 : "";
 
             return (
@@ -579,18 +580,18 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
             );
           });
           if (!matched?.id) {
-            console.warn("No Supabase preset row found for preset id", updatedPreset.id);
+            console.warn("No Supabase preset row found for preset id", presetToSync.id);
             return;
           }
           console.log("Matched Supabase preset row id:", matched.id);
           console.log("Supabase preset update payload first exercise setCount/targetReps:", {
-            setCount: updatedPreset.exercises[0]?.setCount ?? null,
-            targetReps: updatedPreset.exercises[0]?.targetReps ?? null
+            setCount: presetToSync.exercises[0]?.setCount ?? null,
+            targetReps: presetToSync.exercises[0]?.targetReps ?? null
           });
 
           const { data: updateData, error } = await supabase
             .from("presets")
-            .update({ data: updatedPreset })
+            .update({ data: presetToSync })
             .eq("id", matched.id)
             .eq("user_id", user.id)
             .select();
