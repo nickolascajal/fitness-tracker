@@ -613,10 +613,9 @@ Deployment notes:
   - edit/delete sync for existing local actions is active via user-scoped Supabase row lookup by `data.workoutId`, then update/delete by row `id`
 - Exercises sync status:
   - create/insert to `exercises` is active (full config object in `data`)
-  - load/hydrate from `exercises` is active and merged into local state
-  - merge strategy is:
-    - exact `id` first
-    - fallback dedupe by normalized name + full config signature
+  - load/hydrate from `exercises` is active
+  - authenticated + successful Supabase fetch now replaces local cache (authoritative remote snapshot), while still overlaying local entries that have unresolved pending `insert`/`update` items so offline-unsynced changes remain visible
+  - if Supabase returns no exercise rows, local exercise cache is cleared unless a pending item requires keeping a local unsynced entry
   - current local delete action (`clearExercises`) now also deletes user exercise rows in Supabase
 - Presets sync status:
   - preset creation/load works (`presets` rows are inserted and hydrated into provider state)
@@ -627,7 +626,7 @@ Deployment notes:
     all update the matching Supabase row by writing the full current preset object to `presets.data`
   - local preset create/edit/delete actions now also insert/update/delete Supabase rows
   - matching strategy uses `data.id` / `data.presetId` fallbacks for compatibility
-  - preset hydration now treats Supabase as authoritative for matching preset ids (`id` / `presetId` compatibility checks), replacing stale localStorage copies during merge
+  - preset hydration now uses the same source-of-truth rule: successful authenticated Supabase fetch replaces local preset cache; unresolved pending inserts/updates are overlaid from local state; pending deletes remove matching remote items from hydrated state
   - temporary debug instrumentation is present around preset edit/save/update flow to validate sync path and payload shape across tabs/incognito (safe to remove after verification)
 - Presets table + RLS pattern:
   - table shape:
@@ -642,7 +641,7 @@ Deployment notes:
     - DELETE `using (auth.uid() = user_id)`
 - Source-of-truth status:
   - localStorage remains active and required for local-first UX
-  - Supabase sync is additive; app is not yet fully Supabase-only
+  - when authenticated and Supabase hydration succeeds, Supabase is authoritative for hydration state replacement
   - data may be temporarily divergent if remote calls fail; local flow must continue
 - Matching strategy summary:
   - workouts by `data.workoutId`
@@ -794,6 +793,30 @@ Deployment notes:
       - `Clear all Supabase workouts failed`
     - `clearAllData()` in `app/workout/page.tsx` now explicitly runs and awaits all three remote bulk deletes (`workouts`, `exercises`, `presets`) itself, logs per-table delete results, and queues per-table pending delete-all fallback when any delete fails.
     - pending sync delete-all support for workouts is handled before workoutId-based matching (`{ type: "workout", action: "delete", payload: { all: true } }`) to avoid stale classification.
+  - hydration source-of-truth correction:
+    - in `WorkoutHistoryProvider`, authenticated successful Supabase fetch now replaces local workout cache (instead of merging stale local history back in).
+    - if Supabase returns empty workouts, workout cache is cleared for the active client and logs `Supabase returned empty workouts — clearing local workout cache`.
+    - if hydration fails or user is not authenticated/offline, local fallback remains active and logs `Supabase hydration failed — using local fallback`.
+    - pending workout insert/update items are overlaid after remote replacement so unsynced local entries remain visible until flush resolves.
+    - pending workout deletes suppress matching hydrated remote rows, preventing deleted-local/pending-delete items from reappearing before retry.
+
+## Data Mutation Architecture Rule
+
+- Rule summary:
+  - UI/page components must not perform app-data table writes directly.
+  - All workout/exercise/preset create/update/delete must flow through provider mutations.
+  - Provider mutations are responsible for local state update first, then Supabase sync + pending queue fallback.
+- Allowed write surface:
+  - workouts: `addWorkout(entry)`, `updateWorkoutEntry(...)`, `removeWorkoutsFromDate(...)`, `clearWorkoutHistory()`
+  - exercises/presets: `addExercise(...)`, `addPreset(...)`, `updatePreset(...)`, `removePresets(...)`, `clearExercises()`, `clearPresets()`
+- Disallowed pattern:
+  - direct `supabase.from("workouts" | "exercises" | "presets")...` calls inside page/UI components for app-data mutations
+  - direct localStorage writes from page/UI components for app-data domains
+- Examples:
+  - correct: `addWorkout(entry)`
+  - incorrect: `supabase.from("workouts").insert(...)` inside `app/workout/page.tsx`
+- Why:
+  - enforces one mutation layer for local state, remote sync, offline queueing, retry, and duplicate-prevention behavior.
 
 ## Next Goals
 

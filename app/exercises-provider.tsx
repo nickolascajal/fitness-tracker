@@ -18,11 +18,11 @@ import {
 import {
   addPendingSyncItem,
   flushPendingSyncQueue,
+  loadPendingSyncQueue,
   removePendingInsertForEntity
 } from "@/lib/pendingSync";
 import { getUserForPendingSync } from "@/lib/pendingSyncAuth";
 import { supabase } from "@/lib/supabaseClient";
-import { exerciseNameKey } from "@/lib/exerciseNameKey";
 
 export type ExerciseType = "weight" | "bodyweight" | "time";
 
@@ -135,40 +135,6 @@ function safePresetList(data: unknown): WorkoutPreset[] {
     }));
 }
 
-function exerciseConfigSignature(exercise: Exercise): string {
-  return JSON.stringify({
-    n: exerciseNameKey(exercise.name),
-    setCount: exercise.setCount,
-    targetReps: exercise.targetReps,
-    increment: exercise.increment,
-    unit: exercise.unit,
-    type: exercise.type,
-    foundation: exercise.foundation,
-    trackRir: exercise.trackRir,
-    trackRpe: exercise.trackRpe
-  });
-}
-
-/**
- * Merges remote exercises into local list: no duplicate ids; no duplicate name+config.
- */
-function mergeExercisesFromRemote(local: Exercise[], remote: Exercise[]): Exercise[] {
-  const seenIds = new Set<string>();
-  const seenSigs = new Set<string>();
-  for (const e of local) {
-    seenIds.add(e.id);
-    seenSigs.add(exerciseConfigSignature(e));
-  }
-  const out = [...local];
-  for (const r of remote) {
-    if (seenIds.has(r.id)) continue;
-    if (seenSigs.has(exerciseConfigSignature(r))) continue;
-    seenIds.add(r.id);
-    seenSigs.add(exerciseConfigSignature(r));
-    out.push(r);
-  }
-  return out;
-}
 
 type PostgrestLikeError = {
   message?: string;
@@ -232,44 +198,89 @@ function exerciseInsertPayloadForLog(exercise: Exercise) {
   };
 }
 
-function presetLegacyId(preset: WorkoutPreset): string {
-  const maybe = (preset as WorkoutPreset & { presetId?: unknown }).presetId;
-  return typeof maybe === "string" ? maybe : "";
-}
+function applyAuthoritativeExerciseHydration(
+  remote: Exercise[],
+  local: Exercise[]
+): Exercise[] {
+  const pending = loadPendingSyncQueue().filter((item) => item.type === "exercise");
+  const deletedIds = new Set<string>();
+  const keptIds = new Set<string>();
+  const localById = new Map(local.map((item) => [item.id, item]));
 
-/**
- * Hydration merge rule: when a remote preset matches a local preset id pair,
- * Supabase wins and replaces the stale local preset.
- */
-function mergePresetsFromRemote(local: WorkoutPreset[], remote: WorkoutPreset[]): WorkoutPreset[] {
-  const out = [...local];
-  const usedLocalIndexes = new Set<number>();
-
-  const findMatchingLocalIndex = (remotePreset: WorkoutPreset): number => {
-    const remoteId = remotePreset.id;
-    const remotePresetId = presetLegacyId(remotePreset);
-    return out.findIndex((localPreset, index) => {
-      if (usedLocalIndexes.has(index)) return false;
-      const localId = localPreset.id;
-      const localPresetId = presetLegacyId(localPreset);
-      return (
-        localId === remoteId ||
-        (localPresetId !== "" && localPresetId === remoteId) ||
-        (remotePresetId !== "" && localId === remotePresetId)
-      );
-    });
-  };
-
-  for (const remotePreset of remote) {
-    const matchIndex = findMatchingLocalIndex(remotePreset);
-    if (matchIndex >= 0) {
-      out[matchIndex] = remotePreset;
-      usedLocalIndexes.add(matchIndex);
+  for (const item of pending) {
+    const payload = item.payload as {
+      exerciseId?: string;
+      exercise?: Exercise;
+    };
+    const id = payload.exerciseId ?? payload.exercise?.id ?? "";
+    if (!id) continue;
+    if (item.action === "delete") {
+      deletedIds.add(id);
+      keptIds.delete(id);
       continue;
     }
-    out.push(remotePreset);
+    if (item.action === "insert" || item.action === "update") {
+      keptIds.add(id);
+    }
   }
 
+  const base = remote.filter((item) => !deletedIds.has(item.id));
+  const out = [...base];
+  const seen = new Set(out.map((item) => item.id));
+  for (const id of keptIds) {
+    const localItem = localById.get(id);
+    if (!localItem) continue;
+    if (seen.has(id)) {
+      const idx = out.findIndex((item) => item.id === id);
+      if (idx >= 0) out[idx] = localItem;
+      continue;
+    }
+    out.push(localItem);
+    seen.add(id);
+  }
+  return out;
+}
+
+function applyAuthoritativePresetHydration(
+  remote: WorkoutPreset[],
+  local: WorkoutPreset[]
+): WorkoutPreset[] {
+  const pending = loadPendingSyncQueue().filter((item) => item.type === "preset");
+  const deletedIds = new Set<string>();
+  const keptIds = new Set<string>();
+  const localById = new Map(local.map((item) => [item.id, item]));
+
+  for (const item of pending) {
+    const payload = item.payload as {
+      presetId?: string;
+      preset?: WorkoutPreset;
+    };
+    const id = payload.presetId ?? payload.preset?.id ?? "";
+    if (!id) continue;
+    if (item.action === "delete") {
+      deletedIds.add(id);
+      keptIds.delete(id);
+      continue;
+    }
+    if (item.action === "insert" || item.action === "update") {
+      keptIds.add(id);
+    }
+  }
+
+  const base = remote.filter((item) => !deletedIds.has(item.id));
+  const out = [...base];
+  const seen = new Set(out.map((item) => item.id));
+  for (const id of keptIds) {
+    const localItem = localById.get(id);
+    if (!localItem) continue;
+    if (seen.has(id)) {
+      const idx = out.findIndex((item) => item.id === id);
+      if (idx >= 0) out[idx] = localItem;
+      continue;
+    }
+    out.push(localItem);
+    seen.add(id);
+  }
   return out;
 }
 
@@ -333,19 +344,15 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           logPostgrestError("Supabase exercises fetch error:", error);
           return;
         }
-        if (!rows?.length) return;
-
         const remote: Exercise[] = [];
-        for (const row of rows) {
+        for (const row of rows ?? []) {
           const raw = (row as { data?: unknown }).data;
           const list = safeExerciseList(Array.isArray(raw) ? raw : raw != null ? [raw] : []);
           for (const e of list) {
             remote.push(e);
           }
         }
-
-        if (remote.length === 0) return;
-        setExercises((prev) => mergeExercisesFromRemote(prev, remote));
+        setExercises((prev) => applyAuthoritativeExerciseHydration(remote, prev));
       } catch (e) {
         const err = e as Error & PostgrestLikeError;
         console.error("Supabase exercises hydration failed:", {
@@ -382,15 +389,13 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (!rows?.length) return;
         const remote: WorkoutPreset[] = [];
-        for (const row of rows as SupabaseJsonRow[]) {
+        for (const row of (rows as SupabaseJsonRow[] | null | undefined) ?? []) {
           const raw = row.data;
           const list = safePresetList(Array.isArray(raw) ? raw : raw != null ? [raw] : []);
           for (const preset of list) remote.push(preset);
         }
-        if (remote.length === 0) return;
-        setPresets((prev) => mergePresetsFromRemote(prev, remote));
+        setPresets((prev) => applyAuthoritativePresetHydration(remote, prev));
       } catch (e) {
         const err = e as Error & PostgrestLikeError;
         console.error("Supabase presets hydration failed:", {
@@ -928,6 +933,12 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Data mutation architecture rule:
+ * - New exercise/preset features must call provider mutations (addExercise/addPreset/updatePreset/removePresets/clear*).
+ * - Do not call Supabase exercises/presets table writes directly from UI/page components.
+ * - Do not write exercises/presets localStorage directly from UI components.
+ */
 export function useExercises() {
   const context = useContext(ExercisesContext);
   if (!context) {

@@ -17,6 +17,7 @@ import {
 import {
   addPendingSyncItem,
   flushPendingSyncQueue,
+  loadPendingSyncQueue,
   removePendingInsertForEntity
 } from "@/lib/pendingSync";
 import { getUserForPendingSync } from "@/lib/pendingSyncAuth";
@@ -287,6 +288,64 @@ function mergeWorkoutHistoryByDate(
   return merged;
 }
 
+function buildPendingWorkoutOverlay(
+  previous: WorkoutHistoryByDate
+): { overlay: WorkoutHistoryByDate; deletedIds: Set<string> } {
+  const pending = loadPendingSyncQueue().filter((item) => item.type === "workout");
+  const keepIds = new Set<string>();
+  const deleteIds = new Set<string>();
+  const payloadEntries = new Map<string, WorkoutHistoryEntry>();
+
+  for (const item of pending) {
+    const payload = item.payload as {
+      workoutId?: string;
+      entry?: WorkoutHistoryEntry;
+      data?: WorkoutHistoryEntry;
+    };
+    const workoutId =
+      typeof payload?.workoutId === "string"
+        ? payload.workoutId
+        : typeof payload?.entry?.workoutId === "string"
+          ? payload.entry.workoutId
+          : typeof payload?.data?.workoutId === "string"
+            ? payload.data.workoutId
+            : "";
+    if (!workoutId) continue;
+    if (item.action === "delete") {
+      deleteIds.add(workoutId);
+      keepIds.delete(workoutId);
+      payloadEntries.delete(workoutId);
+      continue;
+    }
+    if (item.action === "insert" || item.action === "update") {
+      keepIds.add(workoutId);
+      const entry = payload.entry ?? payload.data;
+      if (entry) {
+        payloadEntries.set(workoutId, entry);
+      }
+    }
+  }
+
+  const overlay: WorkoutHistoryByDate = {};
+  for (const workoutId of keepIds) {
+    const entryFromPayload = payloadEntries.get(workoutId);
+    if (entryFromPayload) {
+      const key = entryDateKey(entryFromPayload);
+      if (!key) continue;
+      overlay[key] = [...(overlay[key] ?? []), entryFromPayload];
+      continue;
+    }
+    for (const [dateKey, entries] of Object.entries(previous)) {
+      const matched = entries.find((entry) => entry.workoutId === workoutId);
+      if (!matched) continue;
+      overlay[dateKey] = [...(overlay[dateKey] ?? []), matched];
+      break;
+    }
+  }
+
+  return { overlay, deletedIds: deleteIds };
+}
+
 function isOfflineAuthFailure(error: unknown): boolean {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
   if (error instanceof TypeError) return true;
@@ -342,36 +401,51 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.error("Supabase workout fetch error:", error);
+          console.log("Supabase hydration failed — using local fallback");
           return;
         }
 
+        console.log("Supabase hydration succeeded — replacing local cache");
         console.log("Supabase workouts fetched:", data?.length ?? 0);
-        if (!data || data.length === 0) return;
-
         const remoteByDate: WorkoutHistoryByDate = {};
-
-        for (const row of data as SupabaseWorkoutRow[]) {
-          const raw = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-          const normalized = normalizeWorkoutEntry(
-            raw as Partial<WorkoutHistoryEntry>,
-            typeof row.date === "string" ? row.date : undefined
-          );
-          if (!normalized) continue;
-          const dateKey =
-            typeof row.date === "string" && row.date.trim() !== ""
-              ? row.date
-              : entryDateKey(normalized);
-          if (!dateKey) continue;
-          remoteByDate[dateKey] = [...(remoteByDate[dateKey] ?? []), normalized];
+        for (const row of (data as SupabaseWorkoutRow[] | null | undefined) ?? []) {
+          try {
+            const raw = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+            const normalized = normalizeWorkoutEntry(
+              raw as Partial<WorkoutHistoryEntry>,
+              typeof row.date === "string" ? row.date : undefined
+            );
+            if (!normalized) continue;
+            const dateKey =
+              typeof row.date === "string" && row.date.trim() !== ""
+                ? row.date
+                : entryDateKey(normalized);
+            if (!dateKey) continue;
+            remoteByDate[dateKey] = [...(remoteByDate[dateKey] ?? []), normalized];
+          } catch {
+            // ignore malformed remote row payloads
+          }
         }
 
         setEntriesByDate((previous) => {
-          const merged = mergeWorkoutHistoryByDate(previous, remoteByDate);
-          console.log("Hydrated workout date keys:", Object.keys(merged));
-          return merged;
+          const { overlay, deletedIds } = buildPendingWorkoutOverlay(previous);
+          const remoteFiltered: WorkoutHistoryByDate = {};
+          for (const [dateKey, entries] of Object.entries(remoteByDate)) {
+            const kept = entries.filter((entry) => !deletedIds.has(entry.workoutId));
+            if (kept.length > 0) {
+              remoteFiltered[dateKey] = kept;
+            }
+          }
+          const replaced = mergeWorkoutHistoryByDate(remoteFiltered, overlay);
+          if (!data || data.length === 0) {
+            console.log("Supabase returned empty workouts — clearing local workout cache");
+          }
+          console.log("Hydrated workout date keys:", Object.keys(replaced));
+          return replaced;
         });
       } catch (error) {
         console.error("Supabase workout hydration failed:", error);
+        console.log("Supabase hydration failed — using local fallback");
       }
     };
 
@@ -886,6 +960,12 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Data mutation architecture rule:
+ * - New workout-data features must call provider mutations (e.g. addWorkout/updateWorkoutEntry/removeWorkoutsFromDate).
+ * - Do not call Supabase workout table writes directly from UI/page components.
+ * - Do not write workout history/localStorage directly from UI components.
+ */
 export function useWorkoutHistory() {
   const context = useContext(WorkoutHistoryContext);
   if (!context) {
