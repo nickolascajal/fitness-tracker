@@ -3,7 +3,8 @@ import { createServerSupabase } from "./supabaseServer";
 
 /**
  * Strict admin gate with redirects (e.g. for future middleware or hardened deploys).
- * Current `/admin` UI uses {@link getAdminAccessState} in the admin layout instead.
+ * Current `/admin` UI uses `getAdminEnvState` in the layout plus client-side
+ * Supabase session checks and `adminDataActions` server actions for data.
  *
  * - No session → `/`
  * - Session but not admin → `/workout`

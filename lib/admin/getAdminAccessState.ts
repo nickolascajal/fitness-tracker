@@ -1,22 +1,20 @@
 import { cache } from "react";
-import { createServerSupabase } from "./supabaseServer";
 
-export type AdminAccessOk = { ok: true; user: { id: string; email: string } };
+export type AdminEnvOk = { ok: true };
 
-export type AdminAccessBlocked = {
+export type AdminEnvBlocked = {
   ok: false;
-  reason: "NO_ADMIN_EMAIL" | "NO_SERVICE_ROLE_KEY" | "NO_SESSION" | "NOT_ADMIN";
+  reason: "NO_ADMIN_EMAIL" | "NO_SERVICE_ROLE_KEY";
   message: string;
-  detail?: string;
 };
 
-export type AdminAccessState = AdminAccessOk | AdminAccessBlocked;
+export type AdminEnvState = AdminEnvOk | AdminEnvBlocked;
 
 /**
- * Server-only admin gate without redirects. Used by `/admin` layout for preview/debug.
- * Deduplicated per request when layout + page both call it.
+ * Server-only checks for required admin env vars. Session and admin identity
+ * are handled in the browser (`app/admin/*-client.tsx`) plus server actions.
  */
-export const getAdminAccessState = cache(async (): Promise<AdminAccessState> => {
+export const getAdminEnvState = cache(async (): Promise<AdminEnvState> => {
   const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   if (!adminEmail) {
     return {
@@ -27,8 +25,7 @@ export const getAdminAccessState = cache(async (): Promise<AdminAccessState> => 
     };
   }
 
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!serviceRole) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
     return {
       ok: false,
       reason: "NO_SERVICE_ROLE_KEY",
@@ -37,32 +34,5 @@ export const getAdminAccessState = cache(async (): Promise<AdminAccessState> => 
     };
   }
 
-  const supabase = await createServerSupabase();
-  const {
-    data: { user },
-    error
-  } = await supabase.auth.getUser();
-
-  if (error || !user?.email) {
-    return {
-      ok: false,
-      reason: "NO_SESSION",
-      message:
-        "No Supabase auth session was found for this request. Sign in from the app, then open /admin again.",
-      detail: error?.message
-    };
-  }
-
-  const email = user.email.trim().toLowerCase();
-  if (email !== adminEmail) {
-    return {
-      ok: false,
-      reason: "NOT_ADMIN",
-      message:
-        "The signed-in account is not the configured admin. Dashboard access is limited to ADMIN_EMAIL.",
-      detail: `Session email: ${user.email}\nConfigured ADMIN_EMAIL: ${adminEmail}`
-    };
-  }
-
-  return { ok: true, user: { id: user.id, email: user.email } };
+  return { ok: true };
 });
