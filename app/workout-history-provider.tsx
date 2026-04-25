@@ -826,12 +826,16 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         action: "delete" as const,
         payload: { all: true }
       };
+      console.log("Clear all Supabase workouts started");
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         console.log("Pending delete queued", { type: "workout", all: true });
         addPendingSyncItem(pendingItem);
         return;
       }
       try {
+        const {
+          data: { session }
+        } = await supabase.auth.getSession();
         const {
           data: { user },
           error: userError
@@ -841,17 +845,18 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
           addPendingSyncItem(pendingItem);
           return;
         }
-        if (!user) return;
-        const { error } = await supabase.from("workouts").delete().eq("user_id", user.id);
+        const activeUserId = session?.user?.id ?? user?.id ?? "";
+        if (!activeUserId) return;
+        const { error } = await supabase.from("workouts").delete().eq("user_id", activeUserId);
         if (error) {
-          console.error("Supabase clear workouts failed", error);
+          console.error("Clear all Supabase workouts failed", error);
           console.log("Pending delete queued", { type: "workout", all: true });
           addPendingSyncItem(pendingItem);
           return;
         }
         console.log("Clear all Supabase workouts complete");
       } catch (error) {
-        console.error("Supabase clear workouts failed", error);
+        console.error("Clear all Supabase workouts failed", error);
         console.log("Pending delete queued", { type: "workout", all: true });
         addPendingSyncItem(pendingItem);
       }

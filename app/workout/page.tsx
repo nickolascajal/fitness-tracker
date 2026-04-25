@@ -1291,10 +1291,10 @@ export default function WorkoutPage() {
   const clearAllData = () => {
     console.log("Clear all data started");
     savePendingSyncQueue([]);
-    removeAllFitnessKeys();
+    clearWorkoutHistory();
     clearExercises();
     clearPresets();
-    clearWorkoutHistory();
+    removeAllFitnessKeys();
     console.log("Clear all local data complete");
     exitDayOverviewSelectMode();
     calendarFirstTapYmdRef.current = null;

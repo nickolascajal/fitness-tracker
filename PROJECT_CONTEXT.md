@@ -788,6 +788,10 @@ Deployment notes:
     - clear-all now also triggers remote deletion for current user rows in `workouts`, `exercises`, and `presets`.
     - if remote clear fails (or app is offline), clear-all queues pending delete-all items instead of silently leaving remote data.
     - clear-all resets the pending sync queue before applying clear operations, so stale prior operations do not repopulate cleared state.
+    - workout clear uses bulk delete by authenticated user (`.from("workouts").delete().eq("user_id", activeUserId)`) and now logs:
+      - `Clear all Supabase workouts started`
+      - `Clear all Supabase workouts complete`
+      - `Clear all Supabase workouts failed`
 
 ## Next Goals
 
