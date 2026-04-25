@@ -659,16 +659,19 @@ Deployment notes:
 - `/` is now a public landing page (no auth guard) and keeps the product-facing hero copy:
   - `Track your workouts, manage your exercises, and see your progress over time.`
 - Public auth routes:
-  - `/login` is the public login page (email/password, logs in, then routes to `/library`)
-  - `/signup` is the public signup page (email/password, signs up, then routes to `/library` when session is created; otherwise shows confirmation guidance)
+  - `/login` is the public login page (email/password, logs in, then routes to `/workout`)
+  - `/signup` is the public signup page (email/password, signs up, then routes to `/workout` when session is created; otherwise shows confirmation guidance)
 - `/auth` is now deprecated as a form route and redirects to `/login`.
 - Protected routes:
   - `/library` is protected
   - `/workout` is protected
   - `/profile` is protected
+- Beta traffic routing rule:
+  - unauthenticated direct visits to protected/internal app routes are redirected to `/` (homepage-first entry) to keep beta user flow anchored on landing.
+  - `/`, `/login`, and `/signup` remain publicly accessible without redirect loops.
 - Top navigation behavior:
   - Logged out: shows `Log In` and `Sign Up`; hides app-only links
-  - Logged in: shows `Your Library`, `Log a Workout`, and `Profile`; hides `Log In`/`Sign Up` and does not show logout in the nav
+  - Logged in: shows `Log a Workout`, `Your Library`, and `Profile`; hides `Log In`/`Sign Up` and does not show logout in the nav
 - Profile route:
   - `/profile` now includes:
     - account metadata fields (`name`, optional `age`) saved via Supabase Auth user metadata (`supabase.auth.updateUser({ data: { name, age } })`)
@@ -678,6 +681,24 @@ Deployment notes:
 - Payments/subscriptions:
   - planned for later and not implemented in this phase
 - Existing workout/CPS/recommendation/localStorage behavior remains unchanged by this routing/account-UX restructuring.
+
+## Admin Dashboard v1
+
+- **Purpose:** read-only beta/coaching view of all user data stored in Supabase (`workouts`, `exercises`, `presets`) plus auth emails. No edits, deletes, or mutations from the admin UI.
+- **Routes:**
+  - `/admin` — aggregate totals and per-user counts; link to per-user detail.
+  - `/admin/user/[userId]` — workout history for one user, grouped by date, with sets, CPS, recommendations, and timestamps (parsed from `workouts.data` JSON).
+- **Access control (server-side):**
+  - Uses `@supabase/ssr` `createServerClient` + `cookies()` to read the signed-in user on the server (`lib/admin/supabaseServer.ts`).
+  - Email must match server env `ADMIN_EMAIL` (case-insensitive). If `ADMIN_EMAIL` is unset, admin routes redirect to `/`.
+  - Logged-out visitors to `/admin` → redirect to `/`.
+  - Logged-in non-admin → redirect to `/workout`.
+- **Data fetching (server-only):**
+  - `SUPABASE_SERVICE_ROLE_KEY` is used only in `lib/admin/supabaseServiceRole.ts` (service-role client), consumed from Server Components via `lib/admin/queries.ts`.
+  - The service role key must **never** be prefixed with `NEXT_PUBLIC_` and must **never** be imported from client components.
+  - User emails are resolved via `auth.admin.listUsers` (service role); table counts use `user_id` on app tables.
+- **Dependencies:** `@supabase/ssr` for cookie-bound server auth alongside existing `@supabase/supabase-js`.
+- **Normal users:** `/admin` is not linked from the main nav; regular app routes and behavior are unchanged.
 
 ## Offline Pending Sync v1
 

@@ -31,7 +31,7 @@ export default function ProfilePage() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        router.replace("/login");
+        router.replace("/");
         setAuthChecked(true);
         return;
       }

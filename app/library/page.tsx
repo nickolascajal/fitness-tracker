@@ -84,7 +84,7 @@ export default function LibraryPage() {
       } = await supabase.auth.getSession();
 
       if (!session) {
-        router.replace("/login");
+        router.replace("/");
         setAllowed(false);
         setAuthChecked(true);
         return;
