@@ -163,7 +163,12 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
       return error ? "retry" : "success";
     }
     const rowId = await findRowIdByEntityId(supabase, "workouts", userId, workoutId);
-    if (!rowId) return "stale";
+    if (!rowId) {
+      if (item.action === "delete") {
+        console.log("Workout delete resolved: remote row missing", { workoutId, id: item.id });
+      }
+      return "stale";
+    }
     if (item.action === "update") {
       if (!payload.entry) return "stale";
       const { error } = await supabase
@@ -173,8 +178,11 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
         .eq("user_id", userId);
       return error ? "retry" : "success";
     }
+    console.log("Workout delete remote row found", { workoutId, rowId, id: item.id });
     const { error } = await supabase.from("workouts").delete().eq("id", rowId).eq("user_id", userId);
-    return error ? "retry" : "success";
+    if (error) return "retry";
+    console.log("Workout delete Supabase delete success", { workoutId, id: item.id });
+    return "success";
   }
 
   if (item.type === "exercise") {

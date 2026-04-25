@@ -711,6 +711,10 @@ Deployment notes:
       - workouts: `addWorkout`, `updateWorkoutEntry`, `removeWorkoutsFromDate`
       - exercises/presets: `addExercise`, `clearExercises`, `addPreset`, `updatePreset`, `removePresets`
     - UI flows (day overview, exercise setup, presets, submit flow) inherit deterministic pending behavior by calling these mutations.
+  - workout delete sync correction:
+    - `removeWorkoutsFromDate` now triggers a delete path that always attempts remote workout deletion by current `user_id` + `data.workoutId` when online.
+    - if an unresolved pending workout insert exists for the same `workoutId`, that insert is removed first; online delete still checks Supabase row existence and deletes if found.
+    - offline delete queues only when appropriate (no unresolved insert to cancel), preventing useless delete jobs for rows Supabase never had.
 - Retry behavior:
   - each provider runs a **mount-only** `useEffect` (empty dependency array) that subscribes to `online` and `onAuthStateChange` and calls centralized `flushPendingSyncQueue(...)`.
   - pending sync flush uses `lib/pendingSyncAuth.ts` (prefer `getSession()` then `getUser()`) with auth/session checks **inside** the flush function, not in the effect.
@@ -738,6 +742,12 @@ Deployment notes:
     - `Offline/auth check failed — queued pending sync`
     - `Pending sync item queued`
     - `Pending sync flush started` / `Pending sync flush finished`
+    - workout delete diagnostics:
+      - `Workout delete sync started`
+      - `Workout delete remote row found`
+      - `Workout delete Supabase delete success`
+      - `Workout delete queued`
+      - `Workout delete resolved: remote row missing`
     - `Pending sync: queue before flush` (total + counts by type)
     - `Pending sync auth event received` / `Pending sync online event received`
     - `Pending sync retry started`

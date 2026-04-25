@@ -470,12 +470,13 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
   const syncDeletedWorkoutToSupabase = useCallback(
     async (workoutId: string) => {
-      if (removePendingInsertForEntity("workout", workoutId)) {
+      console.log("Workout delete sync started", { workoutId });
+      const removedPendingInsert = removePendingInsertForEntity("workout", workoutId);
+      if (removedPendingInsert) {
         console.log("Pending insert removed because item was deleted before sync", {
           type: "workout",
           workoutId
         });
-        return;
       }
 
       const pendingItem = {
@@ -484,8 +485,11 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         payload: { workoutId }
       };
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        console.log("Pending delete queued", { type: "workout", workoutId });
-        addPendingSyncItem(pendingItem);
+        if (!removedPendingInsert) {
+          console.log("Workout delete queued", { workoutId });
+          console.log("Pending delete queued", { type: "workout", workoutId });
+          addPendingSyncItem(pendingItem);
+        }
         return;
       }
       try {
@@ -496,9 +500,10 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
         const rowId = await findSupabaseWorkoutRowId(user.id, workoutId);
         if (!rowId) {
-          console.warn("No Supabase row found for workoutId", workoutId);
+          console.log("Workout delete resolved: remote row missing", { workoutId });
           return;
         }
+        console.log("Workout delete remote row found", { workoutId, rowId });
 
         const { error } = await supabase
           .from("workouts")
@@ -508,13 +513,21 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.error("Supabase workout delete failed", error);
+          if (!removedPendingInsert) {
+            console.log("Workout delete queued", { workoutId });
+            console.log("Pending delete queued", { type: "workout", workoutId });
+            addPendingSyncItem(pendingItem);
+          }
+          return;
+        }
+        console.log("Workout delete Supabase delete success", { workoutId });
+      } catch (error) {
+        console.error("Supabase workout delete failed", error);
+        if (!removedPendingInsert) {
+          console.log("Workout delete queued", { workoutId });
           console.log("Pending delete queued", { type: "workout", workoutId });
           addPendingSyncItem(pendingItem);
         }
-      } catch (error) {
-        console.error("Supabase workout delete failed", error);
-        console.log("Pending delete queued", { type: "workout", workoutId });
-        addPendingSyncItem(pendingItem);
       }
     },
     [findSupabaseWorkoutRowId]
