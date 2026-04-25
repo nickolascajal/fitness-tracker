@@ -1003,10 +1003,19 @@ export default function WorkoutPage() {
 
         if (!user) return;
 
-        const { error } = await supabase.from("workouts").insert({
+        const { data, error } = await supabase.from("workouts").insert({
           user_id: user.id,
           date: workoutDate,
           data: workoutObject
+        });
+
+        console.log("supabase-workout-sync", {
+          action: "insert",
+          userId: user.id,
+          workoutId,
+          date: workoutDate,
+          responseData: data ?? null,
+          error: error ?? null
         });
 
         if (error) {

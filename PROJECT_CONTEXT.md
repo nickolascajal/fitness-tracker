@@ -605,6 +605,50 @@ Deployment notes:
 - Redeploy is required after production env-var changes.
 - Current deployed auth works; keep guard/auth updates in sync with pushed commits.
 
+## Supabase Sync v2
+
+- Workouts sync status:
+  - create/insert to `workouts` is active
+  - load/hydrate from `workouts` is active
+  - edit/delete sync for existing local actions is active via user-scoped Supabase row lookup by `data.workoutId`, then update/delete by row `id`
+- Exercises sync status:
+  - create/insert to `exercises` is active (full config object in `data`)
+  - load/hydrate from `exercises` is active and merged into local state
+  - merge strategy is:
+    - exact `id` first
+    - fallback dedupe by normalized name + full config signature
+  - current local delete action (`clearExercises`) now also deletes user exercise rows in Supabase
+- Presets sync status:
+  - preset creation/load works (`presets` rows are inserted and hydrated into provider state)
+  - preset content edit sync is fixed through `updatePreset(...)`:
+    - adding exercises inside an existing preset
+    - removing exercises from an existing preset
+    - editing exercise config fields inside an existing preset
+    all update the matching Supabase row by writing the full current preset object to `presets.data`
+  - local preset create/edit/delete actions now also insert/update/delete Supabase rows
+  - matching strategy uses `data.id` / `data.presetId` fallbacks for compatibility
+  - preset hydration now treats Supabase as authoritative for matching preset ids (`id` / `presetId` compatibility checks), replacing stale localStorage copies during merge
+  - temporary debug instrumentation is present around preset edit/save/update flow to validate sync path and payload shape across tabs/incognito (safe to remove after verification)
+- Presets table + RLS pattern:
+  - table shape:
+    - `id uuid primary key default gen_random_uuid()`
+    - `user_id uuid not null`
+    - `data jsonb not null`
+    - `created_at timestamptz default now()`
+  - policies follow the same user-scoped pattern:
+    - SELECT `using (auth.uid() = user_id)`
+    - INSERT `with check (auth.uid() = user_id)`
+    - UPDATE `using (auth.uid() = user_id) with check (auth.uid() = user_id)`
+    - DELETE `using (auth.uid() = user_id)`
+- Source-of-truth status:
+  - localStorage remains active and required for local-first UX
+  - Supabase sync is additive; app is not yet fully Supabase-only
+  - data may be temporarily divergent if remote calls fail; local flow must continue
+- Matching strategy summary:
+  - workouts by `data.workoutId`
+  - exercises by `data.id`
+  - presets by `data.id` (or `data.presetId` fallback)
+
 ## Next Goals
 
 * [ ] multi-exercise workouts

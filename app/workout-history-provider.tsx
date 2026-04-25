@@ -10,6 +10,7 @@ import {
   type ReactNode
 } from "react";
 import { loadClientWorkoutHistory, saveClientWorkoutHistory } from "@/lib/storage";
+import { supabase } from "@/lib/supabaseClient";
 
 export type WorkoutSetSnapshot = {
   weight: string;
@@ -71,6 +72,13 @@ type WorkoutHistoryStore = {
   byDate: WorkoutHistoryByDate;
   restByDate?: RestFlagsByDate;
   finishedByDate?: FinishedFlagsByDate;
+};
+
+type SupabaseWorkoutRow = {
+  id?: string | number;
+  user_id?: string;
+  date?: string | null;
+  data: unknown;
 };
 
 function toLocalDateStringFromIso(iso: string): string {
@@ -235,6 +243,40 @@ function groupHistoryByExercise(entriesByDate: WorkoutHistoryByDate): Record<str
   return grouped;
 }
 
+function workoutEntrySignature(entry: WorkoutHistoryEntry): string {
+  return `${entry.exerciseId}:${entry.submittedAt}:${entry.workoutDate ?? ""}`;
+}
+
+function mergeWorkoutHistoryByDate(
+  existing: WorkoutHistoryByDate,
+  incoming: WorkoutHistoryByDate
+): WorkoutHistoryByDate {
+  const merged: WorkoutHistoryByDate = {};
+  const allDateKeys = new Set([...Object.keys(existing), ...Object.keys(incoming)]);
+
+  for (const dateKey of allDateKeys) {
+    const current = existing[dateKey] ?? [];
+    const next = incoming[dateKey] ?? [];
+    const seenWorkoutIds = new Set<string>();
+    const seenSignatures = new Set<string>();
+    const combined: WorkoutHistoryEntry[] = [];
+
+    for (const entry of [...current, ...next]) {
+      const signature = workoutEntrySignature(entry);
+      if (seenWorkoutIds.has(entry.workoutId) || seenSignatures.has(signature)) continue;
+      seenWorkoutIds.add(entry.workoutId);
+      seenSignatures.add(signature);
+      combined.push(entry);
+    }
+
+    if (combined.length > 0) {
+      merged[dateKey] = combined.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+    }
+  }
+
+  return merged;
+}
+
 export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
   const [entriesByDate, setEntriesByDate] = useState<WorkoutHistoryByDate>({});
   const [restByDate, setRestByDate] = useState<RestFlagsByDate>({});
@@ -259,6 +301,169 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
     const payload: WorkoutHistoryStore = { byDate: entriesByDate, restByDate, finishedByDate };
     saveClientWorkoutHistory(payload);
   }, [entriesByDate, restByDate, finishedByDate, storageHydrated]);
+
+  useEffect(() => {
+    if (!storageHydrated) return;
+
+    const hydrateSupabaseWorkouts = async () => {
+      try {
+        const {
+          data: { user }
+        } = await supabase.auth.getUser();
+
+        if (!user) return;
+
+        const { data, error } = await supabase
+          .from("workouts")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error("Supabase workout fetch error:", error);
+          return;
+        }
+
+        console.log("Supabase workouts fetched:", data?.length ?? 0);
+        if (!data || data.length === 0) return;
+
+        const remoteByDate: WorkoutHistoryByDate = {};
+
+        for (const row of data as SupabaseWorkoutRow[]) {
+          const raw = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+          const normalized = normalizeWorkoutEntry(
+            raw as Partial<WorkoutHistoryEntry>,
+            typeof row.date === "string" ? row.date : undefined
+          );
+          if (!normalized) continue;
+          const dateKey =
+            typeof row.date === "string" && row.date.trim() !== ""
+              ? row.date
+              : entryDateKey(normalized);
+          if (!dateKey) continue;
+          remoteByDate[dateKey] = [...(remoteByDate[dateKey] ?? []), normalized];
+        }
+
+        setEntriesByDate((previous) => {
+          const merged = mergeWorkoutHistoryByDate(previous, remoteByDate);
+          console.log("Hydrated workout date keys:", Object.keys(merged));
+          return merged;
+        });
+      } catch (error) {
+        console.error("Supabase workout hydration failed:", error);
+      }
+    };
+
+    void hydrateSupabaseWorkouts();
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        void hydrateSupabaseWorkouts();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [storageHydrated]);
+
+  /** Resolves the Supabase row primary key for a local workout, matching `data.workoutId`. */
+  const findSupabaseWorkoutRowId = useCallback(async (userId: string, workoutId: string) => {
+    const { data: rows, error } = await supabase
+      .from("workouts")
+      .select("id,data")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Supabase workout lookup failed:", {
+        message: (error as { message?: string }).message,
+        code: (error as { code?: string }).code
+      });
+      return null;
+    }
+
+    const matched = (rows as SupabaseWorkoutRow[] | null | undefined)?.find((row) => {
+      let payload: unknown = row.data;
+      if (typeof row.data === "string") {
+        try {
+          payload = JSON.parse(row.data);
+        } catch {
+          payload = null;
+        }
+      }
+      const candidate =
+        payload &&
+        typeof payload === "object" &&
+        "workoutId" in payload &&
+        typeof (payload as { workoutId?: unknown }).workoutId === "string"
+          ? (payload as { workoutId: string }).workoutId
+          : "";
+      return candidate === workoutId;
+    });
+
+    return matched?.id != null ? String(matched.id) : null;
+  }, []);
+
+  const syncUpdatedWorkoutToSupabase = useCallback(
+    async (entry: WorkoutHistoryEntry) => {
+      try {
+        const {
+          data: { user }
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const rowId = await findSupabaseWorkoutRowId(user.id, entry.workoutId);
+        if (!rowId) {
+          console.warn("No Supabase row found for workoutId", entry.workoutId);
+          return;
+        }
+
+        const { error } = await supabase
+          .from("workouts")
+          .update({ data: entry })
+          .eq("id", rowId)
+          .eq("user_id", user.id);
+
+        if (error) {
+          console.error("Supabase workout update failed", error);
+        }
+      } catch (error) {
+        console.error("Supabase workout update failed", error);
+      }
+    },
+    [findSupabaseWorkoutRowId]
+  );
+
+  const syncDeletedWorkoutToSupabase = useCallback(
+    async (workoutId: string) => {
+      try {
+        const {
+          data: { user }
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const rowId = await findSupabaseWorkoutRowId(user.id, workoutId);
+        if (!rowId) {
+          console.warn("No Supabase row found for workoutId", workoutId);
+          return;
+        }
+
+        const { error } = await supabase
+          .from("workouts")
+          .delete()
+          .eq("id", rowId)
+          .eq("user_id", user.id);
+
+        if (error) {
+          console.error("Supabase workout delete failed", error);
+        }
+      } catch (error) {
+        console.error("Supabase workout delete failed", error);
+      }
+    },
+    [findSupabaseWorkoutRowId]
+  );
 
   const addWorkout = useCallback((entry: WorkoutHistoryEntry) => {
     setEntriesByDate((previous) => {
@@ -344,6 +549,12 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
   const removeWorkoutsFromDate = useCallback((dateKey: string, workoutIds: string[]) => {
     if (workoutIds.length === 0) return;
     const toRemove = new Set(workoutIds);
+    const currentList = entriesByDate[dateKey] ?? [];
+    const removedIds = currentList
+      .filter((entry) => toRemove.has(entry.workoutId))
+      .map((entry) => entry.workoutId);
+    if (removedIds.length === 0) return;
+
     setEntriesByDate((previous) => {
       const list = previous[dateKey];
       if (!list) return previous;
@@ -364,7 +575,11 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
       }
       return { ...previous, [dateKey]: nextList };
     });
-  }, []);
+
+    for (const workoutId of removedIds) {
+      void syncDeletedWorkoutToSupabase(workoutId);
+    }
+  }, [entriesByDate, syncDeletedWorkoutToSupabase]);
 
   const getWorkoutsByDate = useCallback(
     (date: string) => entriesByDate[date] ?? [],
@@ -373,6 +588,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
   const updateWorkoutEntry = useCallback(
     (workoutId: string, updater: (entry: WorkoutHistoryEntry) => WorkoutHistoryEntry) => {
+      let updatedEntry: WorkoutHistoryEntry | null = null;
       setEntriesByDate((previous) => {
         let changed = false;
         const next: WorkoutHistoryByDate = {};
@@ -380,13 +596,21 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
           next[dateKey] = entries.map((entry) => {
             if (entry.workoutId !== workoutId) return entry;
             changed = true;
-            return updater(entry);
+            const updated = updater(entry);
+            updatedEntry = {
+              ...updated,
+              workoutId: updated.workoutId || `${updated.exerciseId}:${updated.submittedAt}`
+            };
+            return updatedEntry;
           });
         }
         return changed ? next : previous;
       });
+      if (updatedEntry) {
+        void syncUpdatedWorkoutToSupabase(updatedEntry);
+      }
     },
-    []
+    [syncUpdatedWorkoutToSupabase]
   );
 
   const updateLatestWorkout = useCallback(
