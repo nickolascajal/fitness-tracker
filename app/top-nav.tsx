@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 type NavItem = {
@@ -10,15 +10,19 @@ type NavItem = {
   label: string;
 };
 
-const NAV_ITEMS: NavItem[] = [
-  { href: "/auth", label: "Auth" },
+const PUBLIC_NAV_ITEMS: NavItem[] = [
+  { href: "/login", label: "Log In" },
+  { href: "/signup", label: "Sign Up" }
+];
+
+const PRIVATE_NAV_ITEMS: NavItem[] = [
   { href: "/library", label: "Your Library" },
-  { href: "/workout", label: "Log a Workout" }
+  { href: "/workout", label: "Log a Workout" },
+  { href: "/profile", label: "Profile" }
 ];
 
 export function TopNav() {
   const pathname = usePathname();
-  const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const isActive = (href: string) => pathname === href;
@@ -52,18 +56,7 @@ export function TopNav() {
     };
   }, []);
 
-  const visibleItems = isLoggedIn
-    ? NAV_ITEMS.filter((item) => item.href !== "/auth")
-    : NAV_ITEMS.filter((item) => item.href === "/auth");
-
-  const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Sign out error:", error);
-      return;
-    }
-    router.push("/auth");
-  };
+  const visibleItems = isLoggedIn ? PRIVATE_NAV_ITEMS : PUBLIC_NAV_ITEMS;
 
   return (
     <nav className="flex gap-4 text-sm">
@@ -84,15 +77,6 @@ export function TopNav() {
           </Link>
         );
       })}
-      {isLoggedIn ? (
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="font-normal text-white/80 transition-colors hover:text-white md:text-slate-700 md:hover:text-slate-950"
-        >
-          Log out
-        </button>
-      ) : null}
     </nav>
   );
 }

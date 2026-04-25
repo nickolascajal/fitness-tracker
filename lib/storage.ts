@@ -7,7 +7,8 @@ export const STORAGE_KEYS = {
   clients: "fitness-tracker:clients",
   activeClientId: "fitness-tracker:activeClientId",
   exercises: "fitness-tracker:exercises",
-  workoutHistory: "fitness-tracker:workoutHistory"
+  workoutHistory: "fitness-tracker:workoutHistory",
+  pendingSync: "fitness-tracker-pending-sync"
 } as const;
 
 export const DEFAULT_LOCAL_CLIENT_ID = "local-client";
@@ -56,6 +57,98 @@ export function saveJson(key: string, value: unknown): void {
   } catch {
     // Private mode, quota, or disabled storage — ignore
   }
+}
+
+export type PendingSyncType = "workout" | "exercise" | "preset";
+export type PendingSyncAction = "insert" | "update" | "delete";
+
+export type PendingSyncItem = {
+  id: string;
+  type: PendingSyncType;
+  action: PendingSyncAction;
+  payload: unknown;
+  createdAt: string;
+  retryCount: number;
+};
+
+function emitPendingSyncUpdated(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("fitness-tracker:pending-sync-updated"));
+}
+
+function safePendingSyncQueue(data: unknown): PendingSyncItem[] {
+  if (!Array.isArray(data)) return [];
+  return data.filter((item): item is PendingSyncItem => {
+    if (!item || typeof item !== "object") return false;
+    const row = item as Partial<PendingSyncItem>;
+    return (
+      typeof row.id === "string" &&
+      (row.type === "workout" || row.type === "exercise" || row.type === "preset") &&
+      (row.action === "insert" || row.action === "update" || row.action === "delete") &&
+      typeof row.createdAt === "string" &&
+      typeof row.retryCount === "number"
+    );
+  });
+}
+
+export function loadPendingSyncQueue(): PendingSyncItem[] {
+  return safePendingSyncQueue(loadJson<unknown>(STORAGE_KEYS.pendingSync, []));
+}
+
+export function savePendingSyncQueue(items: PendingSyncItem[]): void {
+  if (typeof window === "undefined") return;
+  if (items.length === 0) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEYS.pendingSync);
+    } catch {
+      // ignore
+    }
+  } else {
+    saveJson(STORAGE_KEYS.pendingSync, items);
+  }
+  emitPendingSyncUpdated();
+}
+
+export function updatePendingSyncQueue(
+  updater: (items: PendingSyncItem[]) => PendingSyncItem[]
+): PendingSyncItem[] {
+  const next = updater(loadPendingSyncQueue());
+  savePendingSyncQueue(next);
+  return next;
+}
+
+export function enqueuePendingSyncItem(
+  item: Omit<PendingSyncItem, "id" | "createdAt" | "retryCount">
+): PendingSyncItem {
+  const nextItem: PendingSyncItem = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    retryCount: 0,
+    ...item
+  };
+  updatePendingSyncQueue((existing) => [...existing, nextItem]);
+  return nextItem;
+}
+
+export function resolvePendingSyncItem(id: string): void {
+  updatePendingSyncQueue((items) => items.filter((item) => item.id !== id));
+}
+
+export function incrementPendingSyncRetry(id: string): void {
+  updatePendingSyncQueue((items) =>
+    items.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            retryCount: item.retryCount + 1
+          }
+        : item
+    )
+  );
+}
+
+export function getPendingSyncCount(): number {
+  return loadPendingSyncQueue().length;
 }
 
 function safeRecordTrueFlags(input: unknown): Record<string, true> {

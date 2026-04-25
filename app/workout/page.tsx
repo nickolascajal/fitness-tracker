@@ -521,7 +521,7 @@ export default function WorkoutPage() {
       } = await supabase.auth.getSession();
 
       if (!session) {
-        router.replace("/auth");
+        router.replace("/login");
         setAllowed(false);
         setAuthChecked(true);
         return;
@@ -725,7 +725,7 @@ export default function WorkoutPage() {
           isUserCreated: true
         });
 
-      addWorkout({
+      const draftEntry: WorkoutHistoryEntry = {
         workoutId: crypto.randomUUID(),
         exerciseId: configuredExercise.id,
         exerciseName: configuredExercise.name,
@@ -744,7 +744,9 @@ export default function WorkoutPage() {
         progressionStage: "—",
         recommendation: "Added from preset — enter your sets to log this workout.",
         submittedAt: new Date().toISOString()
-      });
+      };
+      addWorkout(draftEntry);
+
     }
     setExerciseSearchQuery("");
     goBackToDayOverview();
@@ -980,51 +982,6 @@ export default function WorkoutPage() {
         submittedAt
       });
     }
-
-    const workoutObject = {
-      workoutId,
-      exerciseId: selectedExercise.id,
-      exerciseName: selectedExercise.name,
-      workoutDate,
-      isDraft: false,
-      sets: setsSnapshotForStorage,
-      sessionVolume,
-      sessionCps,
-      progressionStage: stage ?? "—",
-      recommendation,
-      submittedAt
-    };
-
-    void (async () => {
-      try {
-        const {
-          data: { user }
-        } = await supabase.auth.getUser();
-
-        if (!user) return;
-
-        const { data, error } = await supabase.from("workouts").insert({
-          user_id: user.id,
-          date: workoutDate,
-          data: workoutObject
-        });
-
-        console.log("supabase-workout-sync", {
-          action: "insert",
-          userId: user.id,
-          workoutId,
-          date: workoutDate,
-          responseData: data ?? null,
-          error: error ?? null
-        });
-
-        if (error) {
-          console.error("Supabase workout insert error:", error);
-        }
-      } catch (error) {
-        console.error("Supabase workout save failed:", error);
-      }
-    })();
 
     setSubmission({
       workoutId,

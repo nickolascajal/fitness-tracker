@@ -649,6 +649,120 @@ Deployment notes:
   - exercises by `data.id`
   - presets by `data.id` (or `data.presetId` fallback)
 
+## Public Landing + Account Dashboard v1
+
+- `/` is now a public landing page (no auth guard) and keeps the product-facing hero copy:
+  - `Track your workouts, manage your exercises, and see your progress over time.`
+- Public auth routes:
+  - `/login` is the public login page (email/password, logs in, then routes to `/library`)
+  - `/signup` is the public signup page (email/password, signs up, then routes to `/library` when session is created; otherwise shows confirmation guidance)
+- `/auth` is now deprecated as a form route and redirects to `/login`.
+- Protected routes:
+  - `/library` is protected
+  - `/workout` is protected
+  - `/profile` is protected
+- Top navigation behavior:
+  - Logged out: shows `Log In` and `Sign Up`; hides app-only links
+  - Logged in: shows `Your Library`, `Log a Workout`, and `Profile`; hides `Log In`/`Sign Up` and does not show logout in the nav
+- Profile route:
+  - `/profile` now includes:
+    - account metadata fields (`name`, optional `age`) saved via Supabase Auth user metadata (`supabase.auth.updateUser({ data: { name, age } })`)
+    - read-only account email + shortened user id
+    - password change flow that verifies current password via `signInWithPassword(...)` before `updateUser({ password })`
+    - logout button (logout exists on profile page only)
+- Payments/subscriptions:
+  - planned for later and not implemented in this phase
+- Existing workout/CPS/recommendation/localStorage behavior remains unchanged by this routing/account-UX restructuring.
+
+## Offline Pending Sync v1
+
+- Source of truth direction:
+  - Supabase remains the long-term source of truth.
+  - localStorage is intentionally retained as fallback/recovery and offline continuity.
+- Centralized pending sync architecture:
+  - queue ownership is centralized in `lib/pendingSync.ts`.
+  - all queue operations route through shared helpers:
+    - `loadPendingSyncQueue()`
+    - `savePendingSyncQueue(queue)`
+    - `addPendingSyncItem(item)`
+    - `removePendingInsertForEntity(type, entityId)`
+    - `flushPendingSyncQueue(supabase, userId)`
+  - providers/pages no longer implement separate queue persistence logic.
+- Pending queue storage:
+  - failed remote writes now enqueue into localStorage key `fitness-tracker-pending-sync`.
+  - queue item shape:
+    - `id`
+    - `type` (`workout` | `exercise` | `preset`)
+    - `action` (`insert` | `update` | `delete`)
+    - `payload`
+    - `createdAt`
+    - `retryCount`
+- Failure behavior:
+  - local UI/localStorage updates are preserved even when Supabase write/update/delete fails.
+  - failures are queued instead of blocking user flow; sync errors are logged but non-fatal.
+  - offline/auth-check nuance:
+    - write paths now distinguish "logged out" vs "offline auth check failure"
+    - if `navigator.onLine === false`, writes are queued immediately (without waiting for `auth.getUser()`)
+    - if `auth.getUser()` throws due to network/fetch failure while offline, the intended write is queued (not skipped)
+    - if `auth.getUser()` succeeds and no user/session exists, skipping remote write remains acceptable
+  - create-path guarantee:
+    - workout/exercise/preset create paths now queue insert payloads immediately when offline (`Pending insert queued immediately because offline`) from mutation-level source-of-truth functions.
+    - mutation functions now own sync + queue behavior:
+      - workouts: `addWorkout`, `updateWorkoutEntry`, `removeWorkoutsFromDate`
+      - exercises/presets: `addExercise`, `clearExercises`, `addPreset`, `updatePreset`, `removePresets`
+    - UI flows (day overview, exercise setup, presets, submit flow) inherit deterministic pending behavior by calling these mutations.
+- Retry behavior:
+  - each provider runs a **mount-only** `useEffect` (empty dependency array) that subscribes to `online` and `onAuthStateChange` and calls centralized `flushPendingSyncQueue(...)`.
+  - pending sync flush uses `lib/pendingSyncAuth.ts` (prefer `getSession()` then `getUser()`) with auth/session checks **inside** the flush function, not in the effect.
+  - on mount, flush is triggered synchronously, then again via `queueMicrotask` and `setTimeout(0)` to catch session apply timing on reload.
+  - `supabase.auth.onAuthStateChange` re-runs flush on every auth event (with console `Pending sync auth event received` while debugging).
+  - pending sync flush also runs when browser connectivity returns via the `online` event (with `Pending sync online event received` while debugging).
+  - successful retries remove the queue item; when the last item is removed, the `fitness-tracker-pending-sync` key is removed from localStorage.
+  - stale/resolved retry handling:
+    - items with missing required identifiers/payload are treated as stale and removed (`Pending sync item removed from queue (stale payload)`).
+    - for `insert`, if a matching Supabase row already exists, the item is treated as already synced and removed.
+    - for `update`/`delete`, if the matching Supabase row does not exist, the item is treated as stale/resolved and removed.
+  - max retry guard:
+    - if `retryCount >= 10`, the item is removed with `Pending sync item failed (max retries reached)` to prevent infinite retries.
+  - failures that continue to retry now log item context (`id`, `type`, `action`, `retryCount`) plus failure reason.
+  - temporary debug logs are present for validation:
+    - `WorkoutHistoryProvider pending flush effect mounted` / `ExercisesProvider pending flush effect mounted`
+    - mutation-level traces:
+      - `addWorkout mutation called`
+      - `updateWorkoutEntry mutation called`
+      - `removeWorkoutsFromDate mutation called`
+      - `addExercise mutation called`
+      - `addPreset mutation called`
+      - `updatePreset mutation called`
+      - `removePresets mutation called`
+    - `Offline/auth check failed — queued pending sync`
+    - `Pending sync item queued`
+    - `Pending sync flush started` / `Pending sync flush finished`
+    - `Pending sync: queue before flush` (total + counts by type)
+    - `Pending sync auth event received` / `Pending sync online event received`
+    - `Pending sync retry started`
+    - `Pending sync item retry` (per item: type, action, id)
+    - `Pending sync item synced` / `Pending sync item removed from queue (success)`
+    - `Pending sync item failed` (includes failure reason for Supabase/lookup errors)
+- Matching strategy retained during retry:
+  - workouts matched by `data.workoutId`
+  - exercises matched by `data.id`
+  - presets matched by `data.id` or `data.presetId`
+- Duplicate insert safety guard:
+  - before retrying queued inserts, providers check whether a matching row already exists for the user.
+  - if it already exists, the queued insert is treated as resolved and removed.
+  - if an item is deleted locally before its pending insert is synced, delete flow removes the matching pending insert (`Pending insert removed because item was deleted before sync`) instead of queueing an unnecessary delete.
+- Minimal UX signal:
+  - app shows subtle status only while queue has pending items:
+    - `Saved locally - will sync when online.`
+  - avoids adding a persistent disruptive sync banner.
+- Current scope:
+  - implemented for workouts, exercises, and presets without changing CPS/progression logic or replacing existing localStorage flows.
+  - day-overview preset draft creation now participates in pending sync:
+    - creating draft workouts (`isDraft: true`) in day overview queues workout pending inserts immediately when offline (`Offline draft workout queued`)
+    - while online, draft creation attempts remote insert (`Draft workout Supabase insert/update attempted`)
+    - submitting an existing draft now syncs by `workoutId` using update-when-found / insert-when-missing to avoid duplicate remote rows
+
 ## Next Goals
 
 * [ ] multi-exercise workouts

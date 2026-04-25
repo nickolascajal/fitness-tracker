@@ -6,10 +6,20 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode
 } from "react";
-import { loadClientWorkoutHistory, saveClientWorkoutHistory } from "@/lib/storage";
+import {
+  loadClientWorkoutHistory,
+  saveClientWorkoutHistory
+} from "@/lib/storage";
+import {
+  addPendingSyncItem,
+  flushPendingSyncQueue,
+  removePendingInsertForEntity
+} from "@/lib/pendingSync";
+import { getUserForPendingSync } from "@/lib/pendingSyncAuth";
 import { supabase } from "@/lib/supabaseClient";
 
 export type WorkoutSetSnapshot = {
@@ -277,6 +287,17 @@ function mergeWorkoutHistoryByDate(
   return merged;
 }
 
+function isOfflineAuthFailure(error: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  if (error instanceof TypeError) return true;
+  const message = String((error as { message?: unknown })?.message ?? "").toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("internet_disconnected")
+  );
+}
+
 export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
   const [entriesByDate, setEntriesByDate] = useState<WorkoutHistoryByDate>({});
   const [restByDate, setRestByDate] = useState<RestFlagsByDate>({});
@@ -407,6 +428,15 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
   const syncUpdatedWorkoutToSupabase = useCallback(
     async (entry: WorkoutHistoryEntry) => {
+      const pendingItem = {
+        type: "workout" as const,
+        action: "update" as const,
+        payload: { workoutId: entry.workoutId, entry }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        addPendingSyncItem(pendingItem);
+        return;
+      }
       try {
         const {
           data: { user }
@@ -416,6 +446,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         const rowId = await findSupabaseWorkoutRowId(user.id, entry.workoutId);
         if (!rowId) {
           console.warn("No Supabase row found for workoutId", entry.workoutId);
+          addPendingSyncItem(pendingItem);
           return;
         }
 
@@ -427,9 +458,11 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.error("Supabase workout update failed", error);
+          addPendingSyncItem(pendingItem);
         }
       } catch (error) {
         console.error("Supabase workout update failed", error);
+        addPendingSyncItem(pendingItem);
       }
     },
     [findSupabaseWorkoutRowId]
@@ -437,6 +470,24 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
   const syncDeletedWorkoutToSupabase = useCallback(
     async (workoutId: string) => {
+      if (removePendingInsertForEntity("workout", workoutId)) {
+        console.log("Pending insert removed because item was deleted before sync", {
+          type: "workout",
+          workoutId
+        });
+        return;
+      }
+
+      const pendingItem = {
+        type: "workout" as const,
+        action: "delete" as const,
+        payload: { workoutId }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        console.log("Pending delete queued", { type: "workout", workoutId });
+        addPendingSyncItem(pendingItem);
+        return;
+      }
       try {
         const {
           data: { user }
@@ -457,20 +508,72 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.error("Supabase workout delete failed", error);
+          console.log("Pending delete queued", { type: "workout", workoutId });
+          addPendingSyncItem(pendingItem);
         }
       } catch (error) {
         console.error("Supabase workout delete failed", error);
+        console.log("Pending delete queued", { type: "workout", workoutId });
+        addPendingSyncItem(pendingItem);
       }
     },
     [findSupabaseWorkoutRowId]
   );
 
+  const flushPendingWorkoutSync = useCallback(async () => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return;
+    }
+    try {
+      const { user } = await getUserForPendingSync();
+      if (!user) {
+        return;
+      }
+      await flushPendingSyncQueue(supabase, user.id);
+    } catch (error) {
+      if (isOfflineAuthFailure(error)) return;
+      console.error("Pending sync flush failed:", { reason: error });
+    }
+  }, []);
+
+  const flushPendingWorkoutSyncRef = useRef(flushPendingWorkoutSync);
+  flushPendingWorkoutSyncRef.current = flushPendingWorkoutSync;
+
+  useEffect(() => {
+    console.log("WorkoutHistoryProvider pending flush effect mounted");
+    const run = () => {
+      void flushPendingWorkoutSyncRef.current();
+    };
+    run();
+    queueMicrotask(run);
+    setTimeout(run, 0);
+    const onOnline = () => {
+      console.log("Pending sync online event received");
+      run();
+    };
+    window.addEventListener("online", onOnline);
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Pending sync auth event received", {
+        event,
+        hasSession: Boolean(session)
+      });
+      run();
+    });
+    return () => {
+      window.removeEventListener("online", onOnline);
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const addWorkout = useCallback((entry: WorkoutHistoryEntry) => {
+    console.log("addWorkout mutation called");
+    const normalized: WorkoutHistoryEntry = {
+      ...entry,
+      workoutId: entry.workoutId || `${entry.exerciseId}:${entry.submittedAt}`
+    };
     setEntriesByDate((previous) => {
-      const normalized: WorkoutHistoryEntry = {
-        ...entry,
-        workoutId: entry.workoutId || `${entry.exerciseId}:${entry.submittedAt}`
-      };
       const dateKey = entryDateKey(normalized);
       if (!dateKey) return previous;
       // Rest day and logged workouts are mutually exclusive; workout creation clears rest flag.
@@ -485,7 +588,66 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         [dateKey]: [normalized, ...(previous[dateKey] ?? [])]
       };
     });
-  }, []);
+    void (async () => {
+      const pendingItem = {
+        type: "workout" as const,
+        action: "insert" as const,
+        payload: {
+          workoutId: normalized.workoutId,
+          date: normalized.workoutDate,
+          entry: normalized
+        }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        console.log("Pending insert queued immediately because offline", {
+          type: "workout",
+          workoutId: normalized.workoutId
+        });
+        addPendingSyncItem(pendingItem);
+        return;
+      }
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser();
+        if (userError && isOfflineAuthFailure(userError)) {
+          console.log("Pending insert queued immediately because offline", {
+            type: "workout",
+            workoutId: normalized.workoutId
+          });
+          addPendingSyncItem(pendingItem);
+          return;
+        }
+        if (!user) return;
+        const rowId = await findSupabaseWorkoutRowId(user.id, normalized.workoutId);
+        if (rowId) {
+          const { error } = await supabase
+            .from("workouts")
+            .update({ data: normalized, date: normalized.workoutDate })
+            .eq("id", rowId)
+            .eq("user_id", user.id);
+          if (error) {
+            addPendingSyncItem({
+              ...pendingItem,
+              action: "update"
+            });
+          }
+          return;
+        }
+        const { error } = await supabase.from("workouts").insert({
+          user_id: user.id,
+          date: normalized.workoutDate,
+          data: normalized
+        });
+        if (error) {
+          addPendingSyncItem(pendingItem);
+        }
+      } catch {
+        addPendingSyncItem(pendingItem);
+      }
+    })();
+  }, [findSupabaseWorkoutRowId]);
 
   const isDateMarkedRest = useCallback(
     (date: string) => Boolean(restByDate[date]),
@@ -547,6 +709,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
   /** Removes specific logged sessions for a calendar day only; does not remove exercises or other dates. */
   const removeWorkoutsFromDate = useCallback((dateKey: string, workoutIds: string[]) => {
+    console.log("removeWorkoutsFromDate mutation called");
     if (workoutIds.length === 0) return;
     const toRemove = new Set(workoutIds);
     const currentList = entriesByDate[dateKey] ?? [];
@@ -588,6 +751,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
 
   const updateWorkoutEntry = useCallback(
     (workoutId: string, updater: (entry: WorkoutHistoryEntry) => WorkoutHistoryEntry) => {
+      console.log("updateWorkoutEntry mutation called");
       let updatedEntry: WorkoutHistoryEntry | null = null;
       setEntriesByDate((previous) => {
         let changed = false;
