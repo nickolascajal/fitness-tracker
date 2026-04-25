@@ -1893,15 +1893,11 @@ export default function WorkoutPage() {
                         <p className="text-sm text-slate-500">No recent exercises match your search.</p>
                       ) : null}
 
-                      <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Saved presets
-                        </h3>
-                        {presets.length === 0 ? (
-                          <p className="mt-2 text-sm text-slate-500">
-                            No saved presets yet. Create one in Your Library.
-                          </p>
-                        ) : (
+                      {presets.length > 0 ? (
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Saved presets
+                          </h3>
                           <ul className="mt-2 space-y-1.5">
                             {presets.map((preset) => (
                               <li key={`preset-${preset.id}`}>
@@ -1919,42 +1915,42 @@ export default function WorkoutPage() {
                               </li>
                             ))}
                           </ul>
-                        )}
-                      </div>
-
-                      <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Your library exercises
-                        </h3>
-                        <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 sm:max-h-48">
-                          {filteredUserCreatedExercises.length === 0 ? (
-                            <p className="text-sm text-slate-500">
-                              {userCreatedExercises.length === 0
-                                ? "No manually created exercises yet."
-                                : "No manually created exercises match your search."}
-                            </p>
-                          ) : (
-                            <ul className="space-y-1">
-                              {filteredUserCreatedExercises.map((exercise) => (
-                                <li key={`user-created-${exercise.id}`}>
-                                  <button
-                                    type="button"
-                                    disabled={isAddWorkoutBlocked}
-                                    onClick={() => selectConfiguredExercise(exercise.id)}
-                                    className="flex w-full items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-left enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    <span className="text-sm font-medium text-slate-900">{exercise.name}</span>
-                                    <span className="text-xs text-slate-500">
-                                      {exercise.setCount} sets / {exercise.targetReps} reps / +
-                                      {exercise.increment} {exercise.unit}
-                                    </span>
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
                         </div>
-                      </div>
+                      ) : null}
+
+                      {userCreatedExercises.length > 0 ? (
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Your library exercises
+                          </h3>
+                          <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 sm:max-h-48">
+                            {filteredUserCreatedExercises.length === 0 ? (
+                              <p className="text-sm text-slate-500">
+                                No manually created exercises match your search.
+                              </p>
+                            ) : (
+                              <ul className="space-y-1">
+                                {filteredUserCreatedExercises.map((exercise) => (
+                                  <li key={`user-created-${exercise.id}`}>
+                                    <button
+                                      type="button"
+                                      disabled={isAddWorkoutBlocked}
+                                      onClick={() => selectConfiguredExercise(exercise.id)}
+                                      className="flex w-full items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-left enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      <span className="text-sm font-medium text-slate-900">{exercise.name}</span>
+                                      <span className="text-xs text-slate-500">
+                                        {exercise.setCount} sets / {exercise.targetReps} reps / +
+                                        {exercise.increment} {exercise.unit}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="rounded-lg border border-slate-200 bg-white p-3">
                         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">

@@ -23,7 +23,7 @@ export default function LoginPage() {
         return;
       }
       if (session) {
-        router.replace("/library");
+        router.replace("/workout");
       }
     };
     void checkSession();
@@ -55,7 +55,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/library");
+    router.push("/workout");
   };
 
   return (

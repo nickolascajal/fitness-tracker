@@ -319,6 +319,12 @@ Analysis panel (post-submit only):
 * The **per-set inputs** block and **Last session** (below inputs) are shown only when **`logFlowPhase === 'exercise_log'`** with a valid **`selectedExercise`**; `handleExerciseChange` initializes the row state from the active exercise config (`buildSetsFromExercise(exercise.setCount)`) and the row renderer uses the selected config's `trackRir` / `trackRpe`
 * `handleExerciseChange(id, exerciseOverride?)` accepts the just-created config as an override (used from `handleConfirmExerciseSetup` after `addExercise`) so new configurations initialize rows immediately even before provider state re-renders (prevents fallback/empty-row behavior when set count changes, e.g. 3 → 4)
 * **Recent** (still configured) → **`exercise_log`**. **All exercises** (master) → always **`exercise_setup`** first; **OK** may reuse or create as above
+* Logged-in top-nav order prioritizes workout flow: **`Log a Workout`** first, then **`Your Library`**, then **`Profile`**
+* Auth success routing now lands on **`/workout`** from both **`/login`** and **`/signup`** to reduce first-workout friction
+* On workout exercise selection, empty-state clutter is reduced:
+  * **Saved presets** section is hidden until at least one preset exists
+  * **Your library exercises** section is hidden until at least one user-created exercise exists
+  * **Recent exercises** (when available) and **All exercises** remain visible under their existing rules
 * On the **input** step, **Back to exercise list** (configured path) mirrors **setup**’s **Cancel** (new-exercise path): it only adjusts client UI state and does not call **`addWorkout`**
 * Inputs reset to empty
 * A simplified **Last session** preview appears below the input section

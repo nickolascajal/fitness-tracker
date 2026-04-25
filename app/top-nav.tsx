@@ -16,8 +16,8 @@ const PUBLIC_NAV_ITEMS: NavItem[] = [
 ];
 
 const PRIVATE_NAV_ITEMS: NavItem[] = [
-  { href: "/library", label: "Your Library" },
   { href: "/workout", label: "Log a Workout" },
+  { href: "/library", label: "Your Library" },
   { href: "/profile", label: "Profile" }
 ];
 
