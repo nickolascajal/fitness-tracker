@@ -6,7 +6,7 @@ import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
 import { generateRecommendation } from "@/lib/generateRecommendation";
 import { removeAllFitnessKeys } from "@/lib/storage";
-import { savePendingSyncQueue } from "@/lib/pendingSync";
+import { addPendingSyncItem, savePendingSyncQueue } from "@/lib/pendingSync";
 import { EXERCISES_BY_LETTER, getMasterExerciseByName } from "@/lib/exercises";
 import { findExerciseWithSameNameAndConfig } from "@/lib/exerciseConfigMatch";
 import { exerciseDuplicateKey, exerciseNameKey } from "@/lib/exerciseNameKey";
@@ -1288,9 +1288,68 @@ export default function WorkoutPage() {
     setSubmitValidationError(null);
   };
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     console.log("Clear all data started");
     savePendingSyncQueue([]);
+
+    const queueDeleteAllFallback = (type: "workout" | "exercise" | "preset") => {
+      addPendingSyncItem({
+        type,
+        action: "delete",
+        payload: { all: true }
+      });
+    };
+
+    try {
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error("Clear all Supabase user lookup failed", userError);
+        queueDeleteAllFallback("workout");
+        queueDeleteAllFallback("exercise");
+        queueDeleteAllFallback("preset");
+      } else if (user) {
+        console.log("Clear all Supabase workouts delete started");
+        const { error: workoutsError } = await supabase
+          .from("workouts")
+          .delete()
+          .eq("user_id", user.id);
+        console.log("Clear all Supabase workouts delete result", workoutsError ?? null);
+        if (workoutsError) {
+          console.error("Clear all Supabase workouts failed", workoutsError);
+          queueDeleteAllFallback("workout");
+        }
+
+        const { error: exercisesError } = await supabase
+          .from("exercises")
+          .delete()
+          .eq("user_id", user.id);
+        console.log("Clear all Supabase exercises delete result", exercisesError ?? null);
+        if (exercisesError) {
+          console.error("Clear all Supabase exercises failed", exercisesError);
+          queueDeleteAllFallback("exercise");
+        }
+
+        const { error: presetsError } = await supabase
+          .from("presets")
+          .delete()
+          .eq("user_id", user.id);
+        console.log("Clear all Supabase presets delete result", presetsError ?? null);
+        if (presetsError) {
+          console.error("Clear all Supabase presets failed", presetsError);
+          queueDeleteAllFallback("preset");
+        }
+      }
+    } catch (error) {
+      console.error("Clear all Supabase delete failed", error);
+      queueDeleteAllFallback("workout");
+      queueDeleteAllFallback("exercise");
+      queueDeleteAllFallback("preset");
+    }
+
     clearWorkoutHistory();
     clearExercises();
     clearPresets();
@@ -1327,7 +1386,7 @@ export default function WorkoutPage() {
   };
 
   const handleConfirmClearAllData = () => {
-    clearAllData();
+    void clearAllData();
     setIsClearConfirmOpen(false);
   };
 

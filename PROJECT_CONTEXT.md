@@ -792,6 +792,8 @@ Deployment notes:
       - `Clear all Supabase workouts started`
       - `Clear all Supabase workouts complete`
       - `Clear all Supabase workouts failed`
+    - `clearAllData()` in `app/workout/page.tsx` now explicitly runs and awaits all three remote bulk deletes (`workouts`, `exercises`, `presets`) itself, logs per-table delete results, and queues per-table pending delete-all fallback when any delete fails.
+    - pending sync delete-all support for workouts is handled before workoutId-based matching (`{ type: "workout", action: "delete", payload: { all: true } }`) to avoid stale classification.
 
 ## Next Goals
 

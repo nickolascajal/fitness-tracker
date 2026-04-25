@@ -154,6 +154,10 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
   };
 
   if (item.type === "workout") {
+    if (item.action === "delete" && payload.all === true) {
+      const { error } = await supabase.from("workouts").delete().eq("user_id", userId);
+      return error ? "retry" : "success";
+    }
     const workoutId = payload.workoutId ?? (payload.entry?.workoutId as string | undefined) ?? "";
     if (!workoutId) return "stale";
     if (item.action === "insert") {
@@ -205,10 +209,6 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
       if (error) return "retry";
       console.log("Workout sync duplicate prevention complete", { workoutId, action: "update", id: item.id });
       return "success";
-    }
-    if (item.action === "delete" && payload.all === true) {
-      const { error } = await supabase.from("workouts").delete().eq("user_id", userId);
-      return error ? "retry" : "success";
     }
     console.log("Workout delete remote row found", { workoutId, rowId, id: item.id });
     const { error } = await supabase.from("workouts").delete().eq("id", rowId).eq("user_id", userId);
