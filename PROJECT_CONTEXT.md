@@ -734,36 +734,13 @@ Deployment notes:
     - for `update`/`delete`, if the matching Supabase row does not exist, the item is treated as stale/resolved and removed.
   - max retry guard:
     - if `retryCount >= 10`, the item is removed with `Pending sync item failed (max retries reached)` to prevent infinite retries.
-  - failures that continue to retry now log item context (`id`, `type`, `action`, `retryCount`) plus failure reason.
-  - temporary debug logs are present for validation:
-    - `WorkoutHistoryProvider pending flush effect mounted` / `ExercisesProvider pending flush effect mounted`
-    - mutation-level traces:
-      - `addWorkout mutation called`
-      - `updateWorkoutEntry mutation called`
-      - `removeWorkoutsFromDate mutation called`
-      - `addExercise mutation called`
-      - `addPreset mutation called`
-      - `updatePreset mutation called`
-      - `removePresets mutation called`
-    - `Offline/auth check failed — queued pending sync`
-    - `Pending sync item queued`
-    - `Pending sync flush started` / `Pending sync flush finished`
-    - workout idempotent sync diagnostics:
-      - `Workout sync existing row found — updating`
-      - `Workout sync no row found — inserting`
-      - `Workout sync duplicate prevention complete`
-    - workout delete diagnostics:
-      - `Workout delete sync started`
-      - `Workout delete remote row found`
-      - `Workout delete Supabase delete success`
-      - `Workout delete queued`
-      - `Workout delete resolved: remote row missing`
-    - `Pending sync: queue before flush` (total + counts by type)
-    - `Pending sync auth event received` / `Pending sync online event received`
-    - `Pending sync retry started`
-    - `Pending sync item retry` (per item: type, action, id)
-    - `Pending sync item synced` / `Pending sync item removed from queue (success)`
-    - `Pending sync item failed` (includes failure reason for Supabase/lookup errors)
+  - failures that continue to retry log item context (`id`, `type`, `action`, `retryCount`) plus failure reason via `console.error`.
+  - production logging cleanup:
+    - temporary pending-sync/hydration/clear-all debug `console.log` instrumentation has been removed.
+    - retained logs are now focused on actionable signals only:
+      - `console.error` for failed Supabase/auth/flush operations
+      - `console.warn` for non-fatal but important states (table not available, stale payload cleanup, max-retry cleanup, unresolved row lookups)
+    - this reduces noisy success-path logging while preserving operational diagnostics.
 - Matching strategy retained during retry:
   - workouts matched by `data.workoutId`
   - exercises matched by `data.id`

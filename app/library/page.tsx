@@ -228,13 +228,6 @@ export default function LibraryPage() {
     if (!editingPresetId) return;
     const nextName = editingPresetName.trim();
     if (!nextName || editingPresetExercises.length === 0) return;
-    console.log("Preset local save clicked");
-    console.log("Preset id being saved:", editingPresetId);
-    console.log("Edited preset exercises count:", editingPresetExercises.length);
-    console.log("First edited exercise setCount/targetReps:", {
-      setCount: editingPresetExercises[0]?.setCount ?? null,
-      targetReps: editingPresetExercises[0]?.targetReps ?? null
-    });
     // Preset updates are local to the preset draft and only committed here.
     updatePreset(editingPresetId, (preset) => ({
       ...preset,

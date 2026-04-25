@@ -1289,7 +1289,6 @@ export default function WorkoutPage() {
   };
 
   const clearAllData = async () => {
-    console.log("Clear all data started");
     savePendingSyncQueue([]);
 
     const queueDeleteAllFallback = (type: "workout" | "exercise" | "preset") => {
@@ -1312,12 +1311,10 @@ export default function WorkoutPage() {
         queueDeleteAllFallback("exercise");
         queueDeleteAllFallback("preset");
       } else if (user) {
-        console.log("Clear all Supabase workouts delete started");
         const { error: workoutsError } = await supabase
           .from("workouts")
           .delete()
           .eq("user_id", user.id);
-        console.log("Clear all Supabase workouts delete result", workoutsError ?? null);
         if (workoutsError) {
           console.error("Clear all Supabase workouts failed", workoutsError);
           queueDeleteAllFallback("workout");
@@ -1327,7 +1324,6 @@ export default function WorkoutPage() {
           .from("exercises")
           .delete()
           .eq("user_id", user.id);
-        console.log("Clear all Supabase exercises delete result", exercisesError ?? null);
         if (exercisesError) {
           console.error("Clear all Supabase exercises failed", exercisesError);
           queueDeleteAllFallback("exercise");
@@ -1337,7 +1333,6 @@ export default function WorkoutPage() {
           .from("presets")
           .delete()
           .eq("user_id", user.id);
-        console.log("Clear all Supabase presets delete result", presetsError ?? null);
         if (presetsError) {
           console.error("Clear all Supabase presets failed", presetsError);
           queueDeleteAllFallback("preset");
@@ -1354,7 +1349,6 @@ export default function WorkoutPage() {
     clearExercises();
     clearPresets();
     removeAllFitnessKeys();
-    console.log("Clear all local data complete");
     exitDayOverviewSelectMode();
     calendarFirstTapYmdRef.current = null;
     setIsDayExercisesListOpen(true);
@@ -1374,7 +1368,6 @@ export default function WorkoutPage() {
     setConfigEditForm(buildSetupDefaults());
     setExerciseSearchQuery("");
     setSetupForm(buildSetupDefaults());
-    console.log("Clear all data complete");
   };
 
   const handleClearAllData = () => {

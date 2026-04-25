@@ -62,12 +62,6 @@ export function addPendingSyncItem(
   };
   const queue = loadPendingSyncQueue();
   savePendingSyncQueue([...queue, next]);
-  console.log("Pending sync item queued", {
-    id: next.id,
-    type: next.type,
-    action: next.action,
-    retryCount: next.retryCount
-  });
   return next;
 }
 
@@ -164,56 +158,43 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
       const existingId = await findRowIdByEntityId(supabase, "workouts", userId, workoutId);
       if (existingId) {
         if (!payload.entry) return "stale";
-        console.log("Workout sync existing row found — updating", { workoutId, rowId: existingId, id: item.id });
         const { error } = await supabase
           .from("workouts")
           .update({ data: payload.entry, date: payload.date })
           .eq("id", existingId)
           .eq("user_id", userId);
         if (error) return "retry";
-        console.log("Workout sync duplicate prevention complete", { workoutId, action: "update", id: item.id });
         return "success";
       }
       if (!payload.entry) return "stale";
-      console.log("Workout sync no row found — inserting", { workoutId, id: item.id });
       const rowDate = typeof payload.date === "string" ? payload.date : (payload.entry.workoutDate as string | undefined);
       const { error } = await supabase.from("workouts").insert({ user_id: userId, date: rowDate, data: payload.entry });
       if (error) return "retry";
-      console.log("Workout sync duplicate prevention complete", { workoutId, action: "insert", id: item.id });
       return "success";
     }
     const rowId = await findRowIdByEntityId(supabase, "workouts", userId, workoutId);
     if (!rowId) {
       if (item.action === "update") {
         if (!payload.entry) return "stale";
-        console.log("Workout sync no row found — inserting", { workoutId, id: item.id });
         const rowDate = typeof payload.date === "string" ? payload.date : (payload.entry.workoutDate as string | undefined);
         const { error } = await supabase.from("workouts").insert({ user_id: userId, date: rowDate, data: payload.entry });
         if (error) return "retry";
-        console.log("Workout sync duplicate prevention complete", { workoutId, action: "insert", id: item.id });
         return "success";
-      }
-      if (item.action === "delete") {
-        console.log("Workout delete resolved: remote row missing", { workoutId, id: item.id });
       }
       return "stale";
     }
     if (item.action === "update") {
       if (!payload.entry) return "stale";
-      console.log("Workout sync existing row found — updating", { workoutId, rowId, id: item.id });
       const { error } = await supabase
         .from("workouts")
         .update({ data: payload.entry, date: payload.date })
         .eq("id", rowId)
         .eq("user_id", userId);
       if (error) return "retry";
-      console.log("Workout sync duplicate prevention complete", { workoutId, action: "update", id: item.id });
       return "success";
     }
-    console.log("Workout delete remote row found", { workoutId, rowId, id: item.id });
     const { error } = await supabase.from("workouts").delete().eq("id", rowId).eq("user_id", userId);
     if (error) return "retry";
-    console.log("Workout delete Supabase delete success", { workoutId, id: item.id });
     return "success";
   }
 
@@ -280,7 +261,6 @@ async function processItem(supabase: SupabaseClient, userId: string, item: Pendi
 
 export async function flushPendingSyncQueue(supabase: SupabaseClient, userId: string): Promise<{ remaining: number }> {
   const queue = loadPendingSyncQueue().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  console.log("Pending sync flush started", { total: queue.length });
   const next: PendingSyncItem[] = [];
 
   for (const item of queue) {
@@ -299,7 +279,7 @@ export async function flushPendingSyncQueue(supabase: SupabaseClient, userId: st
         continue;
       }
       if (result === "stale") {
-        console.log("Pending sync item removed from queue (stale payload)", {
+        console.warn("Pending sync item removed from queue (stale payload)", {
           id: item.id,
           type: item.type,
           action: item.action,
@@ -327,6 +307,5 @@ export async function flushPendingSyncQueue(supabase: SupabaseClient, userId: st
   }
 
   savePendingSyncQueue(next);
-  console.log("Pending sync flush finished", { remaining: next.length });
   return { remaining: next.length };
 }

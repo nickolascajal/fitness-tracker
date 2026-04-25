@@ -436,7 +436,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
       foundation: Number.isFinite(data.foundation) ? Number(data.foundation) : 0,
       ...data
     };
-    console.log("addExercise mutation called");
     setExercises((previous) => [exercise, ...previous]);
 
     void (async () => {
@@ -446,10 +445,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         payload: { exerciseId: exercise.id, exercise }
       };
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        console.log("Pending insert queued immediately because offline", {
-          type: "exercise",
-          exerciseId: exercise.id
-        });
         enqueuePendingSyncItem(pendingItem);
         return;
       }
@@ -459,10 +454,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           error: userError
         } = await supabase.auth.getUser();
         if (userError && isOfflineAuthFailure(userError)) {
-          console.log("Pending insert queued immediately because offline", {
-            type: "exercise",
-            exerciseId: exercise.id
-          });
           enqueuePendingSyncItem(pendingItem);
           return;
         }
@@ -522,12 +513,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           name: err?.name,
           cause: (err as { cause?: unknown }).cause
         });
-        if (isOfflineAuthFailure(e)) {
-          console.log("Pending insert queued immediately because offline", {
-            type: "exercise",
-            exerciseId: exercise.id
-          });
-        }
         enqueuePendingSyncItem(pendingItem);
       }
     })();
@@ -541,7 +526,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
       ...data
     };
-    console.log("addPreset mutation called");
     setPresets((previous) => [preset, ...previous]);
 
     void (async () => {
@@ -551,10 +535,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         payload: { presetId: preset.id, preset }
       };
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        console.log("Pending insert queued immediately because offline", {
-          type: "preset",
-          presetId: preset.id
-        });
         enqueuePendingSyncItem(pendingItem);
         return;
       }
@@ -575,12 +555,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Supabase preset insert failed", error);
-        if (isOfflineAuthFailure(error)) {
-          console.log("Pending insert queued immediately because offline", {
-            type: "preset",
-            presetId: preset.id
-          });
-        }
         enqueuePendingSyncItem(pendingItem);
       }
     })();
@@ -590,7 +564,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
 
   const updatePreset = useCallback(
     (presetId: string, updater: (preset: WorkoutPreset) => WorkoutPreset) => {
-      console.log("updatePreset mutation called");
       let updatedPreset: WorkoutPreset | null = null;
       setPresets((previous) => {
         let changed = false;
@@ -612,18 +585,10 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           payload: { presetId: presetToSync.id, preset: presetToSync }
         };
         if (typeof navigator !== "undefined" && navigator.onLine === false) {
-          console.log("Offline/auth check failed — queued pending sync");
           enqueuePendingSyncItem(pendingItem);
           return;
         }
         try {
-          console.log("Supabase preset update start");
-          console.log("updatedPreset id:", presetToSync.id);
-          console.log("updatedPreset first exercise setCount/targetReps:", {
-            setCount: presetToSync.exercises[0]?.setCount ?? null,
-            targetReps: presetToSync.exercises[0]?.targetReps ?? null
-          });
-
           const {
             data: { user }
           } = await supabase.auth.getUser();
@@ -673,29 +638,18 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
             enqueuePendingSyncItem(pendingItem);
             return;
           }
-          console.log("Matched Supabase preset row id:", matched.id);
-          console.log("Supabase preset update payload first exercise setCount/targetReps:", {
-            setCount: presetToSync.exercises[0]?.setCount ?? null,
-            targetReps: presetToSync.exercises[0]?.targetReps ?? null
-          });
-
-          const { data: updateData, error } = await supabase
+          const { error } = await supabase
             .from("presets")
             .update({ data: presetToSync })
             .eq("id", matched.id)
             .eq("user_id", user.id)
             .select();
-          console.log("Supabase preset update data:", updateData ?? null);
-          console.log("Supabase preset update error:", error ?? null);
           if (error) {
             console.error("Supabase preset update failed", error);
             enqueuePendingSyncItem(pendingItem);
           }
         } catch (error) {
           console.error("Supabase preset update failed", error);
-          if (isOfflineAuthFailure(error)) {
-            console.log("Offline/auth check failed — queued pending sync");
-          }
           enqueuePendingSyncItem(pendingItem);
         }
       })();
@@ -704,7 +658,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
   );
 
   const removePresets = useCallback((presetIds: string[]) => {
-    console.log("removePresets mutation called");
     if (presetIds.length === 0) return;
     const ids = new Set(presetIds);
     setPresets((previous) => previous.filter((preset) => !ids.has(preset.id)));
@@ -712,10 +665,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
     for (const presetId of presetIds) {
       void (async () => {
         if (removePendingInsertForEntity("preset", presetId)) {
-          console.log("Pending insert removed because item was deleted before sync", {
-            type: "preset",
-            presetId
-          });
           return;
         }
 
@@ -725,7 +674,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           payload: { presetId }
         };
         if (typeof navigator !== "undefined" && navigator.onLine === false) {
-          console.log("Pending delete queued", { type: "preset", presetId });
           enqueuePendingSyncItem(pendingItem);
           return;
         }
@@ -741,7 +689,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
             .eq("user_id", user.id);
           if (lookupError) {
             console.error("Supabase preset delete failed", lookupError);
-            console.log("Pending delete queued", { type: "preset", presetId });
             enqueuePendingSyncItem(pendingItem);
             return;
           }
@@ -768,14 +715,10 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
             .eq("user_id", user.id);
           if (error) {
             console.error("Supabase preset delete failed", error);
-            console.log("Pending delete queued", { type: "preset", presetId });
             enqueuePendingSyncItem(pendingItem);
           }
         } catch (error) {
           console.error("Supabase preset delete failed", error);
-          if (isOfflineAuthFailure(error)) {
-            console.log("Pending delete queued", { type: "preset", presetId });
-          }
           enqueuePendingSyncItem(pendingItem);
         }
       })();
@@ -783,7 +726,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
   }, [enqueuePendingSyncItem]);
 
   const clearExercises = useCallback(() => {
-    console.log("clearExercises mutation called");
     setExercises([]);
 
     void (async () => {
@@ -793,7 +735,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         payload: { all: true }
       };
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        console.log("Pending delete queued", { type: "exercise", all: true });
         enqueuePendingSyncItem(pendingItem);
         return;
       }
@@ -803,7 +744,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           error: userError
         } = await supabase.auth.getUser();
         if (userError && isOfflineAuthFailure(userError)) {
-          console.log("Pending delete queued", { type: "exercise", all: true });
           enqueuePendingSyncItem(pendingItem);
           return;
         }
@@ -811,23 +751,17 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("exercises").delete().eq("user_id", user.id);
         if (error) {
           console.error("Supabase exercise delete failed", error);
-          console.log("Pending delete queued", { type: "exercise", all: true });
           enqueuePendingSyncItem(pendingItem);
           return;
         }
-        console.log("Clear all Supabase exercises complete");
       } catch (error) {
         console.error("Supabase exercise delete failed", error);
-        if (isOfflineAuthFailure(error)) {
-          console.log("Pending delete queued", { type: "exercise", all: true });
-        }
         enqueuePendingSyncItem(pendingItem);
       }
     })();
   }, [enqueuePendingSyncItem]);
 
   const clearPresets = useCallback(() => {
-    console.log("clearPresets mutation called");
     setPresets([]);
 
     void (async () => {
@@ -837,7 +771,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         payload: { all: true }
       };
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        console.log("Pending delete queued", { type: "preset", all: true });
         enqueuePendingSyncItem(pendingItem);
         return;
       }
@@ -847,7 +780,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
           error: userError
         } = await supabase.auth.getUser();
         if (userError && isOfflineAuthFailure(userError)) {
-          console.log("Pending delete queued", { type: "preset", all: true });
           enqueuePendingSyncItem(pendingItem);
           return;
         }
@@ -855,14 +787,11 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("presets").delete().eq("user_id", user.id);
         if (error) {
           console.error("Supabase preset delete failed", error);
-          console.log("Pending delete queued", { type: "preset", all: true });
           enqueuePendingSyncItem(pendingItem);
           return;
         }
-        console.log("Clear all Supabase presets complete");
       } catch (error) {
         console.error("Supabase preset delete failed", error);
-        console.log("Pending delete queued", { type: "preset", all: true });
         enqueuePendingSyncItem(pendingItem);
       }
     })();
@@ -888,7 +817,6 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
   flushPendingExercisePresetSyncRef.current = flushPendingExercisePresetSync;
 
   useEffect(() => {
-    console.log("ExercisesProvider pending flush effect mounted");
     const run = () => {
       void flushPendingExercisePresetSyncRef.current();
     };
@@ -896,17 +824,12 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
     queueMicrotask(run);
     setTimeout(run, 0);
     const onOnline = () => {
-      console.log("Pending sync online event received");
       run();
     };
     window.addEventListener("online", onOnline);
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Pending sync auth event received", {
-        event,
-        hasSession: Boolean(session)
-      });
+    } = supabase.auth.onAuthStateChange(() => {
       run();
     });
     return () => {
