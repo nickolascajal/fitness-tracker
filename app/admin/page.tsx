@@ -1,17 +1,20 @@
 import Link from "next/link";
+import { getAdminAccessState } from "@/lib/admin/getAdminAccessState";
 import { getAdminOverview } from "@/lib/admin/queries";
-import { requireAdmin } from "@/lib/admin/requireAdmin";
 
 export default async function AdminDashboardPage() {
-  await requireAdmin();
+  const access = await getAdminAccessState();
+  if (!access.ok) {
+    return null;
+  }
 
   let overview;
   try {
     overview = await getAdminOverview();
   } catch {
     return (
-      <section className="mx-auto max-w-4xl space-y-4 pt-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
+      <section className="mx-auto max-w-4xl space-y-4">
+        <h2 className="text-xl font-semibold text-slate-900">Data error</h2>
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           Admin data could not be loaded. Ensure <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> is set
           on the server (never in the browser) and redeploy.
@@ -23,9 +26,9 @@ export default async function AdminDashboardPage() {
   const { totals, users } = overview;
 
   return (
-    <section className="mx-auto max-w-5xl space-y-6 pt-6">
+    <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Admin dashboard</h1>
+        <h2 className="text-xl font-semibold tracking-tight text-slate-900">Overview</h2>
         <p className="mt-1 text-sm text-slate-600">Read-only overview (beta).</p>
       </div>
 

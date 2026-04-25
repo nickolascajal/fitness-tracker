@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { getAdminAccessState } from "@/lib/admin/getAdminAccessState";
 import { getUserWorkoutsForAdmin, groupWorkoutsByDate } from "@/lib/admin/queries";
-import { requireAdmin } from "@/lib/admin/requireAdmin";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,11 +15,24 @@ type PageProps = {
 };
 
 export default async function AdminUserDetailPage(props: PageProps) {
-  await requireAdmin();
+  const access = await getAdminAccessState();
+  if (!access.ok) {
+    return null;
+  }
+
   const { userId } = await props.params;
 
   if (!UUID_RE.test(userId)) {
-    redirect("/admin");
+    return (
+      <section className="space-y-4">
+        <Link href="/admin" className="text-sm font-medium text-slate-700 underline underline-offset-2">
+          ← Back to admin
+        </Link>
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Invalid user id in URL. Expected a UUID.
+        </p>
+      </section>
+    );
   }
 
   let rows;
@@ -28,7 +40,7 @@ export default async function AdminUserDetailPage(props: PageProps) {
     rows = await getUserWorkoutsForAdmin(userId);
   } catch {
     return (
-      <section className="mx-auto max-w-4xl space-y-4 pt-6">
+      <section className="mx-auto max-w-4xl space-y-4">
         <Link href="/admin" className="text-sm font-medium text-slate-700 underline underline-offset-2">
           ← Back to admin
         </Link>
@@ -42,7 +54,7 @@ export default async function AdminUserDetailPage(props: PageProps) {
   const byDate = groupWorkoutsByDate(rows);
 
   return (
-    <section className="mx-auto max-w-5xl space-y-6 pt-6">
+    <section className="space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <Link href="/admin" className="text-sm font-medium text-slate-700 underline underline-offset-2">

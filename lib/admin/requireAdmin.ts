@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "./supabaseServer";
 
 /**
- * Ensures the current session user email matches ADMIN_EMAIL (server env).
+ * Strict admin gate with redirects (e.g. for future middleware or hardened deploys).
+ * Current `/admin` UI uses {@link getAdminAccessState} in the admin layout instead.
+ *
  * - No session → `/`
  * - Session but not admin → `/workout`
  * - ADMIN_EMAIL unset → `/` (admin area disabled)
