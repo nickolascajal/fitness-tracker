@@ -24,23 +24,51 @@ const PRIVATE_NAV_ITEMS: NavItem[] = [
 export function TopNav() {
   const pathname = usePathname();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const isActive = (href: string) => pathname === href;
 
   useEffect(() => {
+    const resolveAdminAccess = async (accessToken: string) => {
+      try {
+        const response = await fetch("/api/admin/nav-access", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          },
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          setIsAdmin(false);
+          return;
+        }
+        const data = (await response.json()) as { isAdmin?: boolean };
+        setIsAdmin(Boolean(data.isAdmin));
+      } catch {
+        setIsAdmin(false);
+      }
+    };
+
     const loadSession = async () => {
       const {
         data: { session },
         error
       } = await supabase.auth.getSession();
-
       if (error) {
         console.error("Session check error:", error);
         setIsLoggedIn(false);
+        setIsAdmin(false);
         return;
       }
 
-      setIsLoggedIn(Boolean(session));
+      if (!session?.access_token) {
+        setIsLoggedIn(false);
+        setIsAdmin(false);
+        return;
+      }
+
+      setIsLoggedIn(true);
+      await resolveAdminAccess(session.access_token);
     };
 
     void loadSession();
@@ -48,7 +76,13 @@ export function TopNav() {
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(Boolean(session));
+      if (!session?.access_token) {
+        setIsLoggedIn(false);
+        setIsAdmin(false);
+        return;
+      }
+      setIsLoggedIn(true);
+      void resolveAdminAccess(session.access_token);
     });
 
     return () => {
@@ -56,7 +90,11 @@ export function TopNav() {
     };
   }, []);
 
-  const visibleItems = isLoggedIn ? PRIVATE_NAV_ITEMS : PUBLIC_NAV_ITEMS;
+  const visibleItems = isLoggedIn
+    ? isAdmin
+      ? [...PRIVATE_NAV_ITEMS, { href: "/admin", label: "Admin Panel" }]
+      : PRIVATE_NAV_ITEMS
+    : PUBLIC_NAV_ITEMS;
 
   return (
     <nav className="flex gap-4 text-sm">

@@ -42,10 +42,12 @@ Core idea:
 
 ### Top-Level Navigation
 
-Top-level navigation contains only:
+Top-level navigation for signed-in users contains:
 
-* `Your Library` (`/library`)
 * `Log a Workout` (`/workout`)
+* `Your Library` (`/library`)
+* `Profile` (`/profile`)
+* `Admin Panel` (`/admin`) **only when the session user is authorized admin**
 
 Navigation interaction polish:
 
@@ -689,17 +691,16 @@ Deployment notes:
   - `/admin` — aggregate totals and per-user counts; link to per-user detail.
   - `/admin/user/[userId]` — workout history for one user, grouped by date, with sets, CPS, recommendations, and timestamps (parsed from `workouts.data` JSON).
 - **Access control (server-side):**
-  - Root `middleware.ts` refreshes Supabase session cookies on matched requests so Server Components see a valid session in production. The middleware’s **beta** rule sends unauthenticated users from internal app routes (`/workout`, `/library`, `/profile`, `/exercise`, and nested paths) to `/`; **`/admin` and `/admin/*` are excluded** from that redirect so requests always reach `requireAdmin()` (which still redirects logged-out users to `/` and non-admins to `/workout`).
-  - Uses `@supabase/ssr` `createServerClient` + `cookies()` to read the signed-in user on the server (`lib/admin/supabaseServer.ts`).
-  - Email must match server env `ADMIN_EMAIL` (case-insensitive). If `ADMIN_EMAIL` is unset, admin routes redirect to `/`.
-  - Logged-out visitors to `/admin` → redirect to `/`.
-  - Logged-in non-admin → redirect to `/workout`.
+  - No global middleware is used for admin auth.
+  - `/admin` layout checks required env configuration (`ADMIN_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`) via `lib/admin/getAdminAccessState.ts`.
+  - Admin pages use client-side Supabase session (`supabase.auth.getSession()`) to obtain an access token and verify user email against `ADMIN_EMAIL`.
+  - Admin server actions (`lib/admin/adminDataActions.ts`) validate the provided access token with anon-key Supabase `auth.getUser(accessToken)` and enforce admin email match before any admin data query runs.
 - **Data fetching (server-only):**
-  - `SUPABASE_SERVICE_ROLE_KEY` is used only in `lib/admin/supabaseServiceRole.ts` (service-role client), consumed from Server Components via `lib/admin/queries.ts`.
+  - `SUPABASE_SERVICE_ROLE_KEY` is used only in `lib/admin/supabaseServiceRole.ts` (service-role client), consumed by server-side query helpers in `lib/admin/queries.ts` via `lib/admin/adminDataActions.ts`.
   - The service role key must **never** be prefixed with `NEXT_PUBLIC_` and must **never** be imported from client components.
   - User emails are resolved via `auth.admin.listUsers` (service role); table counts use `user_id` on app tables.
-- **Dependencies:** `@supabase/ssr` for cookie-bound server auth alongside existing `@supabase/supabase-js`.
-- **Normal users:** `/admin` is not linked from the main nav; regular app routes and behavior are unchanged.
+- **Top nav visibility:** `app/top-nav.tsx` calls `GET /api/admin/nav-access` with the signed-in access token; only authorized admin sessions see `Admin Panel`.
+- **Normal users:** `/admin` is hidden from main nav; regular app routes and behavior are unchanged.
 
 ## Offline Pending Sync v1
 
