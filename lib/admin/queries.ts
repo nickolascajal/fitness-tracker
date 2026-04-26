@@ -24,6 +24,13 @@ export type AdminOverview = {
   users: AdminUserSummary[];
 };
 
+export type AdminOrphanCleanupResult = {
+  orphanedUserIdsCount: number;
+  deletedWorkouts: number;
+  deletedExercises: number;
+  deletedPresets: number;
+};
+
 function increment(map: Map<string, number>, userId: string) {
   map.set(userId, (map.get(userId) ?? 0) + 1);
 }
@@ -68,6 +75,21 @@ function sumCountsForUsers(counts: Map<string, number>, userIds: Set<string>): n
   return total;
 }
 
+function orphanedUserIdsFromCounts(
+  activeUserIds: Set<string>,
+  ...maps: Array<Map<string, number>>
+): Set<string> {
+  const orphaned = new Set<string>();
+  for (const map of maps) {
+    for (const userId of map.keys()) {
+      if (!activeUserIds.has(userId)) {
+        orphaned.add(userId);
+      }
+    }
+  }
+  return orphaned;
+}
+
 export async function getAdminOverview(): Promise<AdminOverview> {
   noStore();
   const admin = getServiceRoleSupabase();
@@ -97,6 +119,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   const presetCounts = countByUser(presetRows);
   const emailById = await buildEmailMap();
   const activeUserIds = new Set<string>(emailById.keys());
+  const orphanedUserIds = orphanedUserIdsFromCounts(activeUserIds, workoutCounts, exerciseCounts, presetCounts);
 
   const users: AdminUserSummary[] = Array.from(activeUserIds)
     .sort()
@@ -121,11 +144,61 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       workouts: activeWorkouts,
       exercises: activeExercises,
       presets: activePresets,
-      orphanedWorkouts: workoutRows.length - activeWorkouts,
-      orphanedExercises: exerciseRows.length - activeExercises,
-      orphanedPresets: presetRows.length - activePresets
+      orphanedWorkouts: sumCountsForUsers(workoutCounts, orphanedUserIds),
+      orphanedExercises: sumCountsForUsers(exerciseCounts, orphanedUserIds),
+      orphanedPresets: sumCountsForUsers(presetCounts, orphanedUserIds)
     },
     users
+  };
+}
+
+export async function cleanupOrphanedRows(): Promise<AdminOrphanCleanupResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+
+  const [workoutsRes, exercisesRes, presetsRes] = await Promise.all([
+    admin.from("workouts").select("user_id"),
+    admin.from("exercises").select("user_id"),
+    admin.from("presets").select("user_id")
+  ]);
+
+  if (workoutsRes.error || exercisesRes.error || presetsRes.error) {
+    throw new Error("Failed to inspect orphaned rows before cleanup.");
+  }
+
+  const workoutCounts = countByUser((workoutsRes.data ?? []) as { user_id: string }[]);
+  const exerciseCounts = countByUser((exercisesRes.data ?? []) as { user_id: string }[]);
+  const presetCounts = countByUser((presetsRes.data ?? []) as { user_id: string }[]);
+  const activeUserIds = new Set<string>((await buildEmailMap()).keys());
+  const orphanedUserIds = Array.from(
+    orphanedUserIdsFromCounts(activeUserIds, workoutCounts, exerciseCounts, presetCounts)
+  );
+
+  if (orphanedUserIds.length === 0) {
+    return {
+      orphanedUserIdsCount: 0,
+      deletedWorkouts: 0,
+      deletedExercises: 0,
+      deletedPresets: 0
+    };
+  }
+
+  const [deleteWorkoutsRes, deleteExercisesRes, deletePresetsRes] = await Promise.all([
+    admin.from("workouts").delete().in("user_id", orphanedUserIds),
+    admin.from("exercises").delete().in("user_id", orphanedUserIds),
+    admin.from("presets").delete().in("user_id", orphanedUserIds)
+  ]);
+
+  if (deleteWorkoutsRes.error || deleteExercisesRes.error || deletePresetsRes.error) {
+    throw new Error("Failed while deleting one or more orphaned row groups.");
+  }
+
+  const orphanedIdSet = new Set<string>(orphanedUserIds);
+  return {
+    orphanedUserIdsCount: orphanedUserIds.length,
+    deletedWorkouts: sumCountsForUsers(workoutCounts, orphanedIdSet),
+    deletedExercises: sumCountsForUsers(exerciseCounts, orphanedIdSet),
+    deletedPresets: sumCountsForUsers(presetCounts, orphanedIdSet)
   };
 }
 

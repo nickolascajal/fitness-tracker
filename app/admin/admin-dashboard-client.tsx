@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { fetchAdminOverviewAction } from "@/lib/admin/adminDataActions";
+import { useCallback, useEffect, useState } from "react";
+import { cleanupAdminOrphanedRowsAction, fetchAdminOverviewAction } from "@/lib/admin/adminDataActions";
 import type { AdminOverview } from "@/lib/admin/queries";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -12,6 +12,23 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
   const [phase, setPhase] = useState<Phase>("loading");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [fetchMessage, setFetchMessage] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+
+  const loadOverview = useCallback(async (token: string) => {
+    setPhase("loading");
+    const res = await fetchAdminOverviewAction(token);
+    if (!res.ok) {
+      setFetchMessage(res.message);
+      setPhase("fetch_error");
+      return false;
+    }
+    setOverview(res.data);
+    setPhase("ready");
+    return true;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,24 +61,16 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
         return;
       }
 
-      setPhase("loading");
-      const res = await fetchAdminOverviewAction(accessToken);
+      setAccessToken(accessToken);
+      const didLoad = await loadOverview(accessToken);
       if (cancelled) return;
-
-      if (!res.ok) {
-        setFetchMessage(res.message);
-        setPhase("fetch_error");
-        return;
-      }
-
-      setOverview(res.data);
-      setPhase("ready");
+      if (!didLoad) return;
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [expectedAdminEmail]);
+  }, [expectedAdminEmail, loadOverview]);
 
   if (phase === "loading" && overview === null) {
     return (
@@ -100,6 +109,8 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
   }
 
   const { totals, users } = overview;
+  const hasOrphanedRows =
+    totals.orphanedWorkouts + totals.orphanedExercises + totals.orphanedPresets > 0;
 
   return (
     <section className="space-y-6">
@@ -130,14 +141,53 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
         <p className="font-medium text-amber-900">
           Active Auth users: {totals.activeUsersTotal}
-          {totals.orphanedWorkouts + totals.orphanedExercises + totals.orphanedPresets > 0
-            ? " · Orphaned rows detected"
-            : ""}
+          {hasOrphanedRows ? " · Orphaned rows detected" : ""}
         </p>
         <p className="mt-1">
           Orphaned rows (deleted/missing auth users): workouts {totals.orphanedWorkouts}, exercises{" "}
           {totals.orphanedExercises}, presets {totals.orphanedPresets}.
         </p>
+        {hasOrphanedRows ? (
+          <div className="mt-3">
+            <button
+              type="button"
+              disabled={isCleaning || !accessToken}
+              onClick={async () => {
+                if (!accessToken) return;
+                const confirmed = window.confirm(
+                  "Delete all orphaned rows for deleted users? This cannot be undone."
+                );
+                if (!confirmed) return;
+
+                setIsCleaning(true);
+                setCleanupMessage(null);
+                setCleanupError(null);
+                const res = await cleanupAdminOrphanedRowsAction(accessToken);
+                if (!res.ok) {
+                  setCleanupError(res.message);
+                  setIsCleaning(false);
+                  return;
+                }
+
+                const { deletedWorkouts, deletedExercises, deletedPresets } = res.data;
+                if (deletedWorkouts + deletedExercises + deletedPresets === 0) {
+                  setCleanupMessage("No orphaned rows were deleted.");
+                } else {
+                  setCleanupMessage(
+                    `Deleted ${deletedWorkouts} orphaned workouts, ${deletedExercises} orphaned exercises, and ${deletedPresets} orphaned presets.`
+                  );
+                }
+                await loadOverview(accessToken);
+                setIsCleaning(false);
+              }}
+              className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 enabled:hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCleaning ? "Cleaning..." : "Clean up orphaned rows"}
+            </button>
+          </div>
+        ) : null}
+        {cleanupMessage ? <p className="mt-2 text-xs text-amber-900">{cleanupMessage}</p> : null}
+        {cleanupError ? <p className="mt-2 text-xs text-rose-900">{cleanupError}</p> : null}
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">

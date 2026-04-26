@@ -2,7 +2,14 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
-import { getAdminOverview, getUserWorkoutsForAdmin, type AdminOverview, type AdminUserWorkoutRow } from "./queries";
+import {
+  cleanupOrphanedRows,
+  getAdminOverview,
+  getUserWorkoutsForAdmin,
+  type AdminOrphanCleanupResult,
+  type AdminOverview,
+  type AdminUserWorkoutRow
+} from "./queries";
 
 export type AdminOverviewActionResult =
   | { ok: true; data: AdminOverview }
@@ -17,6 +24,14 @@ export type AdminUserWorkoutsActionResult =
   | {
       ok: false;
       code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminCleanupOrphansActionResult =
+  | { ok: true; data: AdminOrphanCleanupResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data";
       message: string;
     };
 
@@ -116,6 +131,27 @@ export async function fetchAdminUserWorkoutsAction(
       ok: false,
       code: "data",
       message: "Could not load workouts. Check server configuration."
+    };
+  }
+}
+
+export async function cleanupAdminOrphanedRowsAction(
+  accessToken: string
+): Promise<AdminCleanupOrphansActionResult> {
+  noStore();
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+
+  try {
+    const data = await cleanupOrphanedRows();
+    return { ok: true, data };
+  } catch {
+    return {
+      ok: false,
+      code: "data",
+      message: "Could not clean up orphaned rows. Check server logs."
     };
   }
 }
