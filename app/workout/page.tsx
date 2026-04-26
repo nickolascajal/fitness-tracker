@@ -601,32 +601,12 @@ export default function WorkoutPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    if (hasLoggedWorkoutHistory) {
-      setHasCompletedFirstWorkoutGuide(true);
-      setFirstWorkoutGuideStep(FIRST_WORKOUT_GUIDE_MAX_STEP);
-      setIsFirstWorkoutGuideReady(true);
-      try {
-        window.localStorage.setItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY, "true");
-        window.localStorage.setItem(
-          FIRST_WORKOUT_GUIDE_STEP_KEY,
-          String(FIRST_WORKOUT_GUIDE_MAX_STEP)
-        );
-      } catch {
-        // ignore storage restrictions
-      }
-      return;
-    }
-
     const completedRaw = window.localStorage.getItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY);
     const stepRaw = Number(window.localStorage.getItem(FIRST_WORKOUT_GUIDE_STEP_KEY) ?? "1");
     setHasCompletedFirstWorkoutGuide(completedRaw === "true");
     setFirstWorkoutGuideStep(clampFirstWorkoutGuideStep(stepRaw));
     setIsFirstWorkoutGuideReady(true);
-  }, [hasLoggedWorkoutHistory]);
-
-  const isFirstWorkoutGuideActive =
-    isFirstWorkoutGuideReady && !hasCompletedFirstWorkoutGuide && !hasLoggedWorkoutHistory;
+  }, []);
 
   const completeFirstWorkoutGuide = () => {
     setHasCompletedFirstWorkoutGuide(true);
@@ -1510,6 +1490,66 @@ export default function WorkoutPage() {
   };
 
   const isAnalysisMode = isWorkoutSubmitted && submission !== null;
+  const workoutHistoryCount = useMemo(
+    () =>
+      Object.values(historyByExerciseId).reduce(
+        (count, entries) => count + entries.filter((entry) => entry.isDraft !== true).length,
+        0
+      ),
+    [historyByExerciseId]
+  );
+  const canShowGuideWithHistory = firstWorkoutGuideStep === 5 && isAnalysisMode && postSubmitView === "dashboard";
+  const isFirstWorkoutGuideActive =
+    isFirstWorkoutGuideReady &&
+    !hasCompletedFirstWorkoutGuide &&
+    (!hasLoggedWorkoutHistory || canShowGuideWithHistory);
+  const showStep1Tooltip =
+    isFirstWorkoutGuideActive && firstWorkoutGuideStep === 1 && logFlowPhase === "day_overview";
+  const showStep2Tooltip =
+    isFirstWorkoutGuideActive && firstWorkoutGuideStep === 2 && logFlowPhase === "exercise_select";
+  const showStep3Tooltip =
+    isFirstWorkoutGuideActive &&
+    firstWorkoutGuideStep === 3 &&
+    (logFlowPhase === "exercise_setup" || logFlowPhase === "exercise_config_edit");
+  const showStep4Tooltip =
+    isFirstWorkoutGuideActive && firstWorkoutGuideStep === 4 && logFlowPhase === "exercise_log" && !isAnalysisMode;
+  const showStep5Tooltip =
+    isFirstWorkoutGuideActive &&
+    firstWorkoutGuideStep === 5 &&
+    isAnalysisMode &&
+    postSubmitView === "dashboard";
+
+  useEffect(() => {
+    console.log("[FirstWorkoutGuide] state", {
+      isFirstWorkoutGuideActive,
+      hasCompletedFirstWorkoutGuide,
+      firstWorkoutGuideStep,
+      logFlowPhase,
+      postSubmitView,
+      isAnalysisMode,
+      workoutHistoryCount,
+      hasLoggedWorkoutHistory,
+      showStep1Tooltip,
+      showStep2Tooltip,
+      showStep3Tooltip,
+      showStep4Tooltip,
+      showStep5Tooltip
+    });
+  }, [
+    firstWorkoutGuideStep,
+    hasCompletedFirstWorkoutGuide,
+    hasLoggedWorkoutHistory,
+    isAnalysisMode,
+    isFirstWorkoutGuideActive,
+    logFlowPhase,
+    postSubmitView,
+    showStep1Tooltip,
+    showStep2Tooltip,
+    showStep3Tooltip,
+    showStep4Tooltip,
+    showStep5Tooltip,
+    workoutHistoryCount
+  ]);
 
   useEffect(() => {
     if (logFlowPhase !== "day_overview") {
@@ -1825,7 +1865,7 @@ export default function WorkoutPage() {
                             >
                               Log First Workout
                             </button>
-                            {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 1 ? (
+                            {showStep1Tooltip ? (
                               <div className="absolute left-1/2 top-full z-10 mt-2 w-72 -translate-x-1/2">
                                 <FirstWorkoutGuideTooltip
                                   copy="Start here — log your first workout."
@@ -1967,7 +2007,7 @@ export default function WorkoutPage() {
                       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         Exercise selection
                       </h2>
-                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 2 ? (
+                      {showStep2Tooltip ? (
                         <FirstWorkoutGuideTooltip
                           copy="Choose the exercise you’re doing, or create one if you don’t see it."
                           onGotIt={advanceFirstWorkoutGuide}
@@ -2136,7 +2176,7 @@ export default function WorkoutPage() {
                       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         Exercise setup
                       </h2>
-                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 3 ? (
+                      {showStep3Tooltip ? (
                         <FirstWorkoutGuideTooltip
                           copy="Adjust sets, target reps, and weight increment here. If you’re unsure, leave the defaults."
                           onGotIt={advanceFirstWorkoutGuide}
@@ -2308,6 +2348,13 @@ export default function WorkoutPage() {
                       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         Edit exercise configuration
                       </h2>
+                      {showStep3Tooltip ? (
+                        <FirstWorkoutGuideTooltip
+                          copy="Adjust sets, target reps, and weight increment here. If you’re unsure, leave the defaults."
+                          onGotIt={advanceFirstWorkoutGuide}
+                          onSkip={completeFirstWorkoutGuide}
+                        />
+                      ) : null}
                       <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                         <p className="text-sm font-semibold text-slate-900">{configEditExerciseName}</p>
                         <div className="mt-3 grid gap-3 sm:grid-cols-4">
@@ -2435,7 +2482,7 @@ export default function WorkoutPage() {
                     <div className="space-y-5">
                       <h3 className="text-base font-semibold text-slate-900">{selectedExercise.name}</h3>
                       <p className="text-sm text-slate-600">Log your workout to receive a recommendation.</p>
-                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 4 ? (
+                      {showStep4Tooltip ? (
                         <FirstWorkoutGuideTooltip
                           copy="Enter your weight and reps for each set, then press Submit Workout when you’re done."
                           onGotIt={advanceFirstWorkoutGuide}
@@ -2735,7 +2782,7 @@ export default function WorkoutPage() {
                     {postSubmitView === "dashboard" ? (
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">This session</h3>
-                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 5 ? (
+                      {showStep5Tooltip ? (
                         <div className="mt-2">
                           <FirstWorkoutGuideTooltip
                             copy="This dashboard shows your performance numbers, recommendation, and comparison to last time."
