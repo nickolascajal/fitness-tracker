@@ -3,10 +3,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
 import {
+  assignPresetDraftsToUserDate,
   cleanupOrphanedRows,
+  getAssignablePresetsForUser,
   getAdminOverview,
   getUserWorkoutsForAdmin,
+  type AdminAssignablePreset,
   type AdminOrphanCleanupResult,
+  type AdminAssignPresetResult,
   type AdminOverview,
   type AdminUserWorkoutRow
 } from "./queries";
@@ -32,6 +36,22 @@ export type AdminCleanupOrphansActionResult =
   | {
       ok: false;
       code: "no_token" | "invalid_token" | "not_admin" | "config" | "data";
+      message: string;
+    };
+
+export type AdminAssignablePresetsActionResult =
+  | { ok: true; data: AdminAssignablePreset[] }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminAssignPresetActionResult =
+  | { ok: true; data: AdminAssignPresetResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
       message: string;
     };
 
@@ -152,6 +172,69 @@ export async function cleanupAdminOrphanedRowsAction(
       ok: false,
       code: "data",
       message: "Could not clean up orphaned rows. Check server logs."
+    };
+  }
+}
+
+export async function fetchAdminAssignablePresetsAction(
+  userId: string,
+  accessToken: string
+): Promise<AdminAssignablePresetsActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+
+  try {
+    const data = await getAssignablePresetsForUser(userId);
+    return { ok: true, data };
+  } catch {
+    return {
+      ok: false,
+      code: "data",
+      message: "Could not load assignable presets for this user."
+    };
+  }
+}
+
+export async function assignAdminPresetToUserDateAction(
+  userId: string,
+  presetId: string,
+  date: string,
+  accessToken: string
+): Promise<AdminAssignPresetActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!presetId.trim()) {
+    return { ok: false, code: "bad_request", message: "Preset is required." };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, code: "bad_request", message: "Invalid date format." };
+  }
+
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+
+  try {
+    const data = await assignPresetDraftsToUserDate(userId, presetId, date);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message:
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not assign preset workouts to this user."
     };
   }
 }

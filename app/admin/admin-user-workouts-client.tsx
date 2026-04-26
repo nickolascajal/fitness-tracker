@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { fetchAdminUserWorkoutsAction } from "@/lib/admin/adminDataActions";
+import { useCallback, useEffect, useState } from "react";
+import {
+  assignAdminPresetToUserDateAction,
+  fetchAdminAssignablePresetsAction,
+  fetchAdminUserWorkoutsAction
+} from "@/lib/admin/adminDataActions";
 import { supabase } from "@/lib/supabaseClient";
 
 type WorkoutRow = {
@@ -55,6 +59,11 @@ function groupWorkoutsByDate(rows: WorkoutRow[]): Map<string, WorkoutRow[]> {
 }
 
 type Phase = "loading" | "login" | "unauthorized" | "ready" | "fetch_error";
+type AssignablePreset = {
+  id: string;
+  name: string;
+  exerciseCount: number;
+};
 
 export function AdminUserWorkoutsClient({
   userId,
@@ -65,7 +74,42 @@ export function AdminUserWorkoutsClient({
 }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [rows, setRows] = useState<WorkoutRow[] | null>(null);
+  const [assignablePresets, setAssignablePresets] = useState<AssignablePreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [assignDate, setAssignDate] = useState(new Date().toISOString().slice(0, 10));
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [assignMessage, setAssignMessage] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [adminAccessToken, setAdminAccessToken] = useState<string | null>(null);
   const [fetchMessage, setFetchMessage] = useState<string | null>(null);
+
+  const loadUserAdminData = useCallback(async (accessToken: string) => {
+    const [workoutsRes, presetsRes] = await Promise.all([
+      fetchAdminUserWorkoutsAction(userId, accessToken),
+      fetchAdminAssignablePresetsAction(userId, accessToken)
+    ]);
+
+    if (!workoutsRes.ok) {
+      setFetchMessage(workoutsRes.message);
+      setPhase("fetch_error");
+      return false;
+    }
+
+    if (!presetsRes.ok) {
+      setFetchMessage(presetsRes.message);
+      setPhase("fetch_error");
+      return false;
+    }
+
+    setRows(workoutsRes.data as WorkoutRow[]);
+    setAssignablePresets(presetsRes.data as AssignablePreset[]);
+    setSelectedPresetId((current) => {
+      if (current && presetsRes.data.some((preset) => preset.id === current)) return current;
+      return presetsRes.data[0]?.id ?? "";
+    });
+    setPhase("ready");
+    return true;
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,24 +144,17 @@ export function AdminUserWorkoutsClient({
         return;
       }
 
+      setAdminAccessToken(accessToken);
       setPhase("loading");
-      const res = await fetchAdminUserWorkoutsAction(userId, accessToken);
+      const ok = await loadUserAdminData(accessToken);
       if (cancelled) return;
-
-      if (!res.ok) {
-        setFetchMessage(res.message);
-        setPhase("fetch_error");
-        return;
-      }
-
-      setRows(res.data as WorkoutRow[]);
-      setPhase("ready");
+      if (!ok) return;
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [expectedAdminEmail, userId]);
+  }, [expectedAdminEmail, loadUserAdminData]);
 
   if (phase === "loading" && rows === null) {
     return (
@@ -168,6 +205,88 @@ export function AdminUserWorkoutsClient({
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">User workouts</h2>
           <p className="mt-1 font-mono text-xs text-slate-600">{userId}</p>
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Assign Workouts</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-slate-600">Date</span>
+            <input
+              type="date"
+              value={assignDate}
+              onChange={(event) => setAssignDate(event.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-slate-600">Saved preset</span>
+            <select
+              value={selectedPresetId}
+              onChange={(event) => setSelectedPresetId(event.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+            >
+              {assignablePresets.length === 0 ? (
+                <option value="">No presets found</option>
+              ) : (
+                assignablePresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name} ({preset.exerciseCount} exercise{preset.exerciseCount === 1 ? "" : "s"})
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={
+              isAssigning || !adminAccessToken || !selectedPresetId || !assignDate || assignablePresets.length === 0
+            }
+            onClick={async () => {
+              if (!adminAccessToken || !selectedPresetId || !assignDate) return;
+              const confirmed = window.confirm(
+                "Assign this preset to the selected date for this user? Existing workouts on that date will be kept."
+              );
+              if (!confirmed) return;
+
+              setIsAssigning(true);
+              setAssignMessage(null);
+              setAssignError(null);
+              const assignRes = await assignAdminPresetToUserDateAction(
+                userId,
+                selectedPresetId,
+                assignDate,
+                adminAccessToken
+              );
+              if (!assignRes.ok) {
+                setAssignError(assignRes.message);
+                setIsAssigning(false);
+                return;
+              }
+
+              setAssignMessage(
+                `Assigned ${assignRes.data.assignedCount} workout(s) to this user for ${assignRes.data.date}.`
+              );
+              await loadUserAdminData(adminAccessToken);
+              setIsAssigning(false);
+            }}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isAssigning ? "Assigning..." : "Assign to user"}
+          </button>
+        </div>
+        {assignMessage ? (
+          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {assignMessage}
+          </p>
+        ) : null}
+        {assignError ? (
+          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+            {assignError}
+          </p>
+        ) : null}
       </div>
 
       {rows.length === 0 ? (

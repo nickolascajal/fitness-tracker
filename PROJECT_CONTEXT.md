@@ -717,6 +717,7 @@ Deployment notes:
   - User rows and active totals are based on the **current** Supabase Auth user list (`auth.admin.listUsers`) and matched against app-table `user_id` values.
   - Rows tied to deleted/missing Auth users are excluded from active dashboard users/totals and reported separately as orphaned row counts (workouts/exercises/presets).
   - Admin dashboard includes an admin-only cleanup action (`Clean up orphaned rows`) that deletes from `workouts`, `exercises`, and `presets` **only** where `user_id` is missing from current Supabase Auth users; active-user rows are never deleted by name/content matching.
+  - Admin user detail (`/admin/user/[userId]`) includes **Assign Workouts**: admins can select a date and apply one of that target user’s saved presets. Assignment appends Supabase `workouts` rows for that `user_id` with `isDraft: true`, preserving existing day rows and using the same preset-draft pattern as normal user flow (`Added from preset — enter your sets to log this workout.`). Missing exact exercise configs (name + config) are created for that target user before draft insertion.
 - **Top nav visibility:** `app/top-nav.tsx` calls `GET /api/admin/nav-access` with the signed-in access token; only authorized admin sessions see `Admin Panel`.
 - **Normal users:** `/admin` is hidden from main nav; regular app routes and behavior are unchanged.
 

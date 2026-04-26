@@ -210,6 +210,17 @@ export type AdminUserWorkoutRow = {
   rawPreview: string | null;
 };
 
+export type AdminAssignablePreset = {
+  id: string;
+  name: string;
+  exerciseCount: number;
+};
+
+export type AdminAssignPresetResult = {
+  assignedCount: number;
+  date: string;
+};
+
 export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUserWorkoutRow[]> {
   noStore();
   const admin = getServiceRoleSupabase();
@@ -256,6 +267,238 @@ export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUser
       rawPreview
     };
   });
+}
+
+type PresetExerciseConfig = {
+  name: string;
+  targetReps: number;
+  setCount: number;
+  increment: number;
+  unit: "lbs" | "kg";
+  trackRir: boolean;
+  trackRpe: boolean;
+};
+
+type StoredUserExercise = {
+  id: string;
+  name: string;
+  setCount: number;
+  targetReps: number;
+  increment: number;
+  unit: "lbs" | "kg";
+  trackRir: boolean;
+  trackRpe: boolean;
+};
+
+function safePresetExercises(input: unknown): PresetExerciseConfig[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((exercise): exercise is PresetExerciseConfig => {
+      if (!exercise || typeof exercise !== "object") return false;
+      const row = exercise as Partial<PresetExerciseConfig>;
+      return (
+        typeof row.name === "string" &&
+        typeof row.targetReps === "number" &&
+        typeof row.setCount === "number" &&
+        typeof row.increment === "number"
+      );
+    })
+    .map((exercise) => ({
+      ...exercise,
+      unit: exercise.unit === "kg" ? "kg" : "lbs",
+      trackRir: exercise.trackRir === true,
+      trackRpe: exercise.trackRpe === true
+    }));
+}
+
+function parseAssignablePresetRow(
+  row: { id?: string | number; data?: unknown } | null | undefined
+): { id: string; name: string; exercises: PresetExerciseConfig[] } | null {
+  if (!row) return null;
+  const payload = row.data && typeof row.data === "object" ? (row.data as Record<string, unknown>) : null;
+  if (!payload) return null;
+  const idFromData = typeof payload.id === "string" ? payload.id : "";
+  const idFromRow = row.id != null ? String(row.id) : "";
+  const id = idFromData || idFromRow;
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  const exercises = safePresetExercises(payload.exercises);
+  if (!id || !name || exercises.length === 0) return null;
+  return { id, name, exercises };
+}
+
+function parseStoredExerciseRow(
+  row: { data?: unknown } | null | undefined
+): StoredUserExercise | null {
+  if (!row || !row.data || typeof row.data !== "object") return null;
+  const payload = row.data as Record<string, unknown>;
+  if (
+    typeof payload.id !== "string" ||
+    typeof payload.name !== "string" ||
+    typeof payload.setCount !== "number" ||
+    typeof payload.targetReps !== "number" ||
+    typeof payload.increment !== "number"
+  ) {
+    return null;
+  }
+  return {
+    id: payload.id,
+    name: payload.name,
+    setCount: payload.setCount,
+    targetReps: payload.targetReps,
+    increment: payload.increment,
+    unit: payload.unit === "kg" ? "kg" : "lbs",
+    trackRir: payload.trackRir === true,
+    trackRpe: payload.trackRpe === true
+  };
+}
+
+function sameConfig(exercise: StoredUserExercise, presetExercise: PresetExerciseConfig): boolean {
+  return (
+    exercise.name.trim().toLowerCase() === presetExercise.name.trim().toLowerCase() &&
+    exercise.setCount === presetExercise.setCount &&
+    exercise.targetReps === presetExercise.targetReps &&
+    exercise.increment === presetExercise.increment &&
+    exercise.unit === presetExercise.unit &&
+    exercise.trackRir === presetExercise.trackRir &&
+    exercise.trackRpe === presetExercise.trackRpe
+  );
+}
+
+function buildDraftSets(setCount: number) {
+  const count = Math.max(1, Math.floor(setCount));
+  return Array.from({ length: count }, () => ({
+    weight: "",
+    reps: "",
+    timeSeconds: 0,
+    rir: "",
+    tir: "",
+    rpe: ""
+  }));
+}
+
+export async function getAssignablePresetsForUser(userId: string): Promise<AdminAssignablePreset[]> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const { data, error } = await admin
+    .from("presets")
+    .select("id,data")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("Admin assignable presets fetch failed:", error.message);
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const presets: AdminAssignablePreset[] = [];
+  for (const row of (data ?? []) as Array<{ id?: string | number; data?: unknown }>) {
+    const parsed = parseAssignablePresetRow(row);
+    if (!parsed || seen.has(parsed.id)) continue;
+    seen.add(parsed.id);
+    presets.push({
+      id: parsed.id,
+      name: parsed.name,
+      exerciseCount: parsed.exercises.length
+    });
+  }
+  return presets;
+}
+
+export async function assignPresetDraftsToUserDate(
+  userId: string,
+  presetId: string,
+  date: string
+): Promise<AdminAssignPresetResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+
+  const { data: presetRows, error: presetError } = await admin
+    .from("presets")
+    .select("id,data")
+    .eq("user_id", userId);
+  if (presetError) {
+    throw new Error(`Failed to load presets for assignment: ${presetError.message}`);
+  }
+
+  const parsedPresets = ((presetRows ?? []) as Array<{ id?: string | number; data?: unknown }>)
+    .map((row) => parseAssignablePresetRow(row))
+    .filter((preset): preset is { id: string; name: string; exercises: PresetExerciseConfig[] } => Boolean(preset));
+  const selectedPreset = parsedPresets.find((preset) => preset.id === presetId);
+  if (!selectedPreset) {
+    throw new Error("Selected preset was not found for this user.");
+  }
+
+  const { data: exerciseRows, error: exercisesError } = await admin
+    .from("exercises")
+    .select("id,data")
+    .eq("user_id", userId);
+  if (exercisesError) {
+    throw new Error(`Failed to load exercises for assignment: ${exercisesError.message}`);
+  }
+
+  const userExercises = ((exerciseRows ?? []) as Array<{ data?: unknown }>)
+    .map((row) => parseStoredExerciseRow(row))
+    .filter((exercise): exercise is StoredUserExercise => Boolean(exercise));
+
+  const now = new Date().toISOString();
+  const draftRows: Array<{ user_id: string; date: string; data: Record<string, unknown> }> = [];
+
+  for (const presetExercise of selectedPreset.exercises) {
+    let matched = userExercises.find((exercise) => sameConfig(exercise, presetExercise));
+    if (!matched) {
+      const newExercise: StoredUserExercise = {
+        id: crypto.randomUUID(),
+        name: presetExercise.name,
+        setCount: presetExercise.setCount,
+        targetReps: presetExercise.targetReps,
+        increment: presetExercise.increment,
+        unit: presetExercise.unit,
+        trackRir: presetExercise.trackRir,
+        trackRpe: presetExercise.trackRpe
+      };
+      const { error: insertExerciseError } = await admin.from("exercises").insert({
+        user_id: userId,
+        data: {
+          ...newExercise,
+          type: "weight",
+          foundation: 0,
+          isUserCreated: true
+        }
+      });
+      if (insertExerciseError) {
+        throw new Error(`Failed to create missing exercise config: ${insertExerciseError.message}`);
+      }
+      userExercises.push(newExercise);
+      matched = newExercise;
+    }
+
+    draftRows.push({
+      user_id: userId,
+      date,
+      data: {
+        workoutId: crypto.randomUUID(),
+        exerciseId: matched.id,
+        exerciseName: matched.name,
+        workoutDate: date,
+        isDraft: true,
+        sets: buildDraftSets(matched.setCount),
+        sessionVolume: 0,
+        sessionCps: null,
+        progressionStage: "—",
+        recommendation: "Added from preset — enter your sets to log this workout.",
+        submittedAt: now
+      }
+    });
+  }
+
+  if (draftRows.length > 0) {
+    const { error: insertWorkoutError } = await admin.from("workouts").insert(draftRows);
+    if (insertWorkoutError) {
+      throw new Error(`Failed to assign draft workouts: ${insertWorkoutError.message}`);
+    }
+  }
+
+  return { assignedCount: draftRows.length, date };
 }
 
 export function groupWorkoutsByDate(rows: AdminUserWorkoutRow[]): Map<string, AdminUserWorkoutRow[]> {
