@@ -110,21 +110,34 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Users (with workouts)</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{totals.usersWithData}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active users (with data)</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{totals.activeUsersWithData}</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total workouts</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active workouts</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{totals.workouts}</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total exercises</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active exercises</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{totals.exercises}</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total presets</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active presets</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{totals.presets}</p>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <p className="font-medium text-amber-900">
+          Active Auth users: {totals.activeUsersTotal}
+          {totals.orphanedWorkouts + totals.orphanedExercises + totals.orphanedPresets > 0
+            ? " · Orphaned rows detected"
+            : ""}
+        </p>
+        <p className="mt-1">
+          Orphaned rows (deleted/missing auth users): workouts {totals.orphanedWorkouts}, exercises{" "}
+          {totals.orphanedExercises}, presets {totals.orphanedPresets}.
+        </p>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">

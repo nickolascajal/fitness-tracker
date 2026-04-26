@@ -1,5 +1,6 @@
 import { getServiceRoleSupabase } from "./supabaseServiceRole";
 import { parseWorkoutEntryFromJson, type AdminWorkoutDisplayEntry } from "./parseWorkoutEntry";
+import { unstable_noStore as noStore } from "next/cache";
 
 export type AdminUserSummary = {
   userId: string;
@@ -11,10 +12,14 @@ export type AdminUserSummary = {
 
 export type AdminOverview = {
   totals: {
-    usersWithData: number;
+    activeUsersWithData: number;
+    activeUsersTotal: number;
     workouts: number;
     exercises: number;
     presets: number;
+    orphanedWorkouts: number;
+    orphanedExercises: number;
+    orphanedPresets: number;
   };
   users: AdminUserSummary[];
 };
@@ -47,7 +52,24 @@ async function buildEmailMap(): Promise<Map<string, string>> {
   return emailById;
 }
 
+function countByUser(rows: { user_id: string }[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.user_id) increment(counts, row.user_id);
+  }
+  return counts;
+}
+
+function sumCountsForUsers(counts: Map<string, number>, userIds: Set<string>): number {
+  let total = 0;
+  for (const userId of userIds) {
+    total += counts.get(userId) ?? 0;
+  }
+  return total;
+}
+
 export async function getAdminOverview(): Promise<AdminOverview> {
+  noStore();
   const admin = getServiceRoleSupabase();
 
   const [workoutsRes, exercisesRes, presetsRes] = await Promise.all([
@@ -70,28 +92,13 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   const exerciseRows = (exercisesRes.data ?? []) as { user_id: string }[];
   const presetRows = (presetsRes.data ?? []) as { user_id: string }[];
 
-  const workoutCounts = new Map<string, number>();
-  const exerciseCounts = new Map<string, number>();
-  const presetCounts = new Map<string, number>();
-
-  for (const row of workoutRows) {
-    if (row.user_id) increment(workoutCounts, row.user_id);
-  }
-  for (const row of exerciseRows) {
-    if (row.user_id) increment(exerciseCounts, row.user_id);
-  }
-  for (const row of presetRows) {
-    if (row.user_id) increment(presetCounts, row.user_id);
-  }
-
-  const allUserIds = new Set<string>();
-  for (const id of workoutCounts.keys()) allUserIds.add(id);
-  for (const id of exerciseCounts.keys()) allUserIds.add(id);
-  for (const id of presetCounts.keys()) allUserIds.add(id);
-
+  const workoutCounts = countByUser(workoutRows);
+  const exerciseCounts = countByUser(exerciseRows);
+  const presetCounts = countByUser(presetRows);
   const emailById = await buildEmailMap();
+  const activeUserIds = new Set<string>(emailById.keys());
 
-  const users: AdminUserSummary[] = Array.from(allUserIds)
+  const users: AdminUserSummary[] = Array.from(activeUserIds)
     .sort()
     .map((userId) => ({
       userId,
@@ -99,18 +106,24 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       workoutCount: workoutCounts.get(userId) ?? 0,
       exerciseCount: exerciseCounts.get(userId) ?? 0,
       presetCount: presetCounts.get(userId) ?? 0
-    }));
+    }))
+    .filter((user) => user.workoutCount > 0 || user.exerciseCount > 0 || user.presetCount > 0);
 
-  const usersWithWorkoutRows = new Set(
-    workoutRows.map((r) => r.user_id).filter((id): id is string => Boolean(id))
-  ).size;
+  const activeUsersWithData = users.length;
+  const activeWorkouts = sumCountsForUsers(workoutCounts, activeUserIds);
+  const activeExercises = sumCountsForUsers(exerciseCounts, activeUserIds);
+  const activePresets = sumCountsForUsers(presetCounts, activeUserIds);
 
   return {
     totals: {
-      usersWithData: usersWithWorkoutRows,
-      workouts: workoutRows.length,
-      exercises: exerciseRows.length,
-      presets: presetRows.length
+      activeUsersWithData,
+      activeUsersTotal: activeUserIds.size,
+      workouts: activeWorkouts,
+      exercises: activeExercises,
+      presets: activePresets,
+      orphanedWorkouts: workoutRows.length - activeWorkouts,
+      orphanedExercises: exerciseRows.length - activeExercises,
+      orphanedPresets: presetRows.length - activePresets
     },
     users
   };
@@ -125,6 +138,7 @@ export type AdminUserWorkoutRow = {
 };
 
 export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUserWorkoutRow[]> {
+  noStore();
   const admin = getServiceRoleSupabase();
   const { data, error } = await admin
     .from("workouts")

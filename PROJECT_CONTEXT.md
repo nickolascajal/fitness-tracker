@@ -713,7 +713,9 @@ Deployment notes:
 - **Data fetching (server-only):**
   - `SUPABASE_SERVICE_ROLE_KEY` is used only in `lib/admin/supabaseServiceRole.ts` (service-role client), consumed by server-side query helpers in `lib/admin/queries.ts` via `lib/admin/adminDataActions.ts`.
   - The service role key must **never** be prefixed with `NEXT_PUBLIC_` and must **never** be imported from client components.
-  - User emails are resolved via `auth.admin.listUsers` (service role); table counts use `user_id` on app tables.
+  - Admin overview is dynamic/no-store (`/admin` layout `force-dynamic`, server actions + queries call `noStore`) so deleted Auth users are reflected without stale cache.
+  - User rows and active totals are based on the **current** Supabase Auth user list (`auth.admin.listUsers`) and matched against app-table `user_id` values.
+  - Rows tied to deleted/missing Auth users are excluded from active dashboard users/totals and reported separately as orphaned row counts (workouts/exercises/presets).
 - **Top nav visibility:** `app/top-nav.tsx` calls `GET /api/admin/nav-access` with the signed-in access token; only authorized admin sessions see `Admin Panel`.
 - **Normal users:** `/admin` is hidden from main nav; regular app routes and behavior are unchanged.
 

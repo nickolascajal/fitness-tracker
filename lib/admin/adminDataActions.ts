@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@supabase/supabase-js";
+import { unstable_noStore as noStore } from "next/cache";
 import { getAdminOverview, getUserWorkoutsForAdmin, type AdminOverview, type AdminUserWorkoutRow } from "./queries";
 
 export type AdminOverviewActionResult =
@@ -74,6 +75,7 @@ async function assertAdminSessionOnServer(accessToken: string): Promise<
 
 /** Loads overview after server-side session + admin email check (service role queries stay server-only). */
 export async function fetchAdminOverviewAction(accessToken: string): Promise<AdminOverviewActionResult> {
+  noStore();
   const gate = await assertAdminSessionOnServer(accessToken);
   if (!gate.ok) {
     return { ok: false, code: gate.code, message: gate.message };
@@ -96,6 +98,7 @@ export async function fetchAdminUserWorkoutsAction(
   userId: string,
   accessToken: string
 ): Promise<AdminUserWorkoutsActionResult> {
+  noStore();
   if (!UUID_RE.test(userId)) {
     return { ok: false, code: "bad_request", message: "Invalid user id." };
   }
