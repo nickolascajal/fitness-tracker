@@ -221,6 +221,25 @@ export type AdminAssignPresetResult = {
   date: string;
 };
 
+export type AdminCreatePresetExercise = {
+  name: string;
+  targetReps: number;
+  setCount: number;
+  increment: number;
+  unit: "lbs" | "kg";
+  trackRir: boolean;
+  trackRpe: boolean;
+};
+
+export type AdminCreatePresetInput = {
+  name: string;
+  exercises: AdminCreatePresetExercise[];
+};
+
+export type AdminCreatePresetResult = {
+  presetId: string;
+};
+
 export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUserWorkoutRow[]> {
   noStore();
   const admin = getServiceRoleSupabase();
@@ -499,6 +518,66 @@ export async function assignPresetDraftsToUserDate(
   }
 
   return { assignedCount: draftRows.length, date };
+}
+
+export async function createPresetForUser(
+  userId: string,
+  input: AdminCreatePresetInput
+): Promise<AdminCreatePresetResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+
+  const presetName = input.name.trim();
+  if (!presetName) {
+    throw new Error("Preset name is required.");
+  }
+  if (!Array.isArray(input.exercises) || input.exercises.length === 0) {
+    throw new Error("At least one exercise is required.");
+  }
+
+  const sanitizedExercises = input.exercises
+    .map((exercise) => ({
+      name: exercise.name.trim(),
+      targetReps: Number(exercise.targetReps),
+      setCount: Number(exercise.setCount),
+      increment: Number(exercise.increment),
+      unit: exercise.unit === "kg" ? "kg" : "lbs",
+      trackRir: exercise.trackRir === true,
+      trackRpe: exercise.trackRpe === true
+    }))
+    .filter(
+      (exercise) =>
+        exercise.name !== "" &&
+        Number.isFinite(exercise.targetReps) &&
+        Number.isFinite(exercise.setCount) &&
+        Number.isFinite(exercise.increment) &&
+        exercise.targetReps > 0 &&
+        exercise.setCount > 0 &&
+        exercise.increment >= 0
+    );
+
+  if (sanitizedExercises.length === 0) {
+    throw new Error("At least one valid exercise is required.");
+  }
+
+  const presetId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  const payload = {
+    id: presetId,
+    name: presetName,
+    exercises: sanitizedExercises,
+    createdAt
+  };
+
+  const { error } = await admin.from("presets").insert({
+    user_id: userId,
+    data: payload
+  });
+  if (error) {
+    throw new Error(`Failed to create preset for this user: ${error.message}`);
+  }
+
+  return { presetId };
 }
 
 export function groupWorkoutsByDate(rows: AdminUserWorkoutRow[]): Map<string, AdminUserWorkoutRow[]> {

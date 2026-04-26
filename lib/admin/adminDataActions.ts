@@ -5,9 +5,12 @@ import { unstable_noStore as noStore } from "next/cache";
 import {
   assignPresetDraftsToUserDate,
   cleanupOrphanedRows,
+  createPresetForUser,
   getAssignablePresetsForUser,
   getAdminOverview,
   getUserWorkoutsForAdmin,
+  type AdminCreatePresetInput,
+  type AdminCreatePresetResult,
   type AdminAssignablePreset,
   type AdminOrphanCleanupResult,
   type AdminAssignPresetResult,
@@ -49,6 +52,14 @@ export type AdminAssignablePresetsActionResult =
 
 export type AdminAssignPresetActionResult =
   | { ok: true; data: AdminAssignPresetResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminCreatePresetActionResult =
+  | { ok: true; data: AdminCreatePresetResult }
   | {
       ok: false;
       code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
@@ -235,6 +246,39 @@ export async function assignAdminPresetToUserDateAction(
         error instanceof Error && error.message
           ? error.message
           : "Could not assign preset workouts to this user."
+    };
+  }
+}
+
+export async function createAdminPresetForUserAction(
+  userId: string,
+  input: AdminCreatePresetInput,
+  accessToken: string
+): Promise<AdminCreatePresetActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!input || typeof input !== "object") {
+    return { ok: false, code: "bad_request", message: "Invalid preset payload." };
+  }
+
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+
+  try {
+    const data = await createPresetForUser(userId, input);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message:
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not create preset for this user."
     };
   }
 }

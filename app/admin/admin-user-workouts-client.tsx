@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   assignAdminPresetToUserDateAction,
+  createAdminPresetForUserAction,
   fetchAdminAssignablePresetsAction,
   fetchAdminUserWorkoutsAction
 } from "@/lib/admin/adminDataActions";
@@ -64,6 +65,27 @@ type AssignablePreset = {
   name: string;
   exerciseCount: number;
 };
+type PresetExerciseDraft = {
+  name: string;
+  targetMode: "reps" | "time";
+  targetReps: number;
+  setCount: number;
+  increment: number;
+  unit: "lbs" | "kg";
+  trackRir: boolean;
+  trackRpe: boolean;
+};
+
+const initialPresetExerciseDraft: PresetExerciseDraft = {
+  name: "",
+  targetMode: "reps",
+  targetReps: 8,
+  setCount: 3,
+  increment: 5,
+  unit: "lbs",
+  trackRir: false,
+  trackRpe: false
+};
 
 export function AdminUserWorkoutsClient({
   userId,
@@ -82,6 +104,14 @@ export function AdminUserWorkoutsClient({
   const [assignError, setAssignError] = useState<string | null>(null);
   const [adminAccessToken, setAdminAccessToken] = useState<string | null>(null);
   const [fetchMessage, setFetchMessage] = useState<string | null>(null);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [presetExerciseDraft, setPresetExerciseDraft] = useState<PresetExerciseDraft>(
+    initialPresetExerciseDraft
+  );
+  const [newPresetExercises, setNewPresetExercises] = useState<PresetExerciseDraft[]>([]);
+  const [isCreatingPreset, setIsCreatingPreset] = useState(false);
+  const [createPresetMessage, setCreatePresetMessage] = useState<string | null>(null);
+  const [createPresetError, setCreatePresetError] = useState<string | null>(null);
 
   const loadUserAdminData = useCallback(async (accessToken: string) => {
     const [workoutsRes, presetsRes] = await Promise.all([
@@ -205,6 +235,229 @@ export function AdminUserWorkoutsClient({
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">User workouts</h2>
           <p className="mt-1 font-mono text-xs text-slate-600">{userId}</p>
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Create Preset for User</h3>
+        <label className="space-y-1">
+          <span className="text-xs font-medium text-slate-600">Preset name</span>
+          <input
+            type="text"
+            value={newPresetName}
+            onChange={(event) => setNewPresetName(event.target.value)}
+            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+            placeholder="e.g. Push Day A"
+          />
+        </label>
+        <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add exercise</p>
+          <input
+            type="text"
+            value={presetExerciseDraft.name}
+            onChange={(event) =>
+              setPresetExerciseDraft((prev) => ({ ...prev, name: event.target.value }))
+            }
+            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+            placeholder="Exercise name"
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <select
+              value={presetExerciseDraft.targetMode}
+              onChange={(event) =>
+                setPresetExerciseDraft((prev) => ({
+                  ...prev,
+                  targetMode: event.target.value as "reps" | "time"
+                }))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+            >
+              <option value="reps">Target reps</option>
+              <option value="time">Target time (seconds)</option>
+            </select>
+            <input
+              type="number"
+              min={1}
+              value={presetExerciseDraft.targetReps}
+              onChange={(event) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(event.target.value) }))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              aria-label={presetExerciseDraft.targetMode === "time" ? "Target time" : "Target reps"}
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <input
+              type="number"
+              min={1}
+              value={presetExerciseDraft.setCount}
+              onChange={(event) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(event.target.value) }))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              aria-label="Set count"
+            />
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={presetExerciseDraft.increment}
+              onChange={(event) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(event.target.value) }))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              aria-label="Increment"
+            />
+            <select
+              value={presetExerciseDraft.unit}
+              onChange={(event) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, unit: event.target.value as "lbs" | "kg" }))
+              }
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              aria-label="Unit"
+            >
+              <option value="lbs">lbs</option>
+              <option value="kg">kg</option>
+            </select>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={presetExerciseDraft.trackRir}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({ ...prev, trackRir: event.target.checked }))
+                }
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+              />
+              {presetExerciseDraft.targetMode === "time" ? "Track TIR" : "Track RIR"}
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={presetExerciseDraft.trackRpe}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: event.target.checked }))
+                }
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+              />
+              Track RPE
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const name = presetExerciseDraft.name.trim();
+              if (!name) return;
+              setNewPresetExercises((prev) => [...prev, { ...presetExerciseDraft, name }]);
+              setPresetExerciseDraft((prev) => ({
+                ...initialPresetExerciseDraft,
+                unit: prev.unit
+              }));
+            }}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Add exercise
+          </button>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Preset exercises</p>
+          {newPresetExercises.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-600">No exercises added yet.</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {newPresetExercises.map((exercise, index) => (
+                <li key={`${exercise.name}-${index}`} className="rounded border border-slate-200 bg-white px-2.5 py-2 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-slate-900">{exercise.name}</p>
+                      <p className="text-slate-600">
+                        {exercise.setCount} sets ·{" "}
+                        {exercise.targetMode === "time"
+                          ? `T ${exercise.targetReps}s`
+                          : `T ${exercise.targetReps} reps`}{" "}
+                        · +{exercise.increment} {exercise.unit} · RIR/TIR: {exercise.trackRir ? "Y" : "N"} · RPE:{" "}
+                        {exercise.trackRpe ? "Y" : "N"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewPresetExercises((prev) => prev.filter((_, i) => i !== index))
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={isCreatingPreset || !adminAccessToken}
+            onClick={async () => {
+              if (!adminAccessToken) return;
+              setCreatePresetMessage(null);
+              setCreatePresetError(null);
+
+              const trimmedName = newPresetName.trim();
+              if (!trimmedName) {
+                setCreatePresetError("Preset name is required.");
+                return;
+              }
+              if (newPresetExercises.length === 0) {
+                setCreatePresetError("Add at least one exercise.");
+                return;
+              }
+
+              setIsCreatingPreset(true);
+              const res = await createAdminPresetForUserAction(
+                userId,
+                {
+                  name: trimmedName,
+                  exercises: newPresetExercises.map((exercise) => ({
+                    name: exercise.name,
+                    targetReps: exercise.targetReps,
+                    setCount: exercise.setCount,
+                    increment: exercise.increment,
+                    unit: exercise.unit,
+                    trackRir: exercise.trackRir,
+                    trackRpe: exercise.trackRpe
+                  }))
+                },
+                adminAccessToken
+              );
+              if (!res.ok) {
+                setCreatePresetError(res.message);
+                setIsCreatingPreset(false);
+                return;
+              }
+
+              setCreatePresetMessage("Created preset for this user.");
+              setNewPresetName("");
+              setNewPresetExercises([]);
+              setPresetExerciseDraft(initialPresetExerciseDraft);
+              await loadUserAdminData(adminAccessToken);
+              setIsCreatingPreset(false);
+            }}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isCreatingPreset ? "Creating..." : "Create preset for user"}
+          </button>
+        </div>
+        {createPresetMessage ? (
+          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {createPresetMessage}
+          </p>
+        ) : null}
+        {createPresetError ? (
+          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+            {createPresetError}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">

@@ -701,7 +701,7 @@ Deployment notes:
 
 ## Admin Dashboard v1
 
-- **Purpose:** read-only beta/coaching view of all user data stored in Supabase (`workouts`, `exercises`, `presets`) plus auth emails. No edits, deletes, or mutations from the admin UI.
+- **Purpose:** coaching/admin view of all user data stored in Supabase (`workouts`, `exercises`, `presets`) plus auth emails, with scoped admin-only actions for safe user-data operations.
 - **Routes:**
   - `/admin` — aggregate totals and per-user counts; link to per-user detail.
   - `/admin/user/[userId]` — workout history for one user, grouped by date, with sets, CPS, recommendations, and timestamps (parsed from `workouts.data` JSON).
@@ -718,6 +718,7 @@ Deployment notes:
   - Rows tied to deleted/missing Auth users are excluded from active dashboard users/totals and reported separately as orphaned row counts (workouts/exercises/presets).
   - Admin dashboard includes an admin-only cleanup action (`Clean up orphaned rows`) that deletes from `workouts`, `exercises`, and `presets` **only** where `user_id` is missing from current Supabase Auth users; active-user rows are never deleted by name/content matching.
   - Admin user detail (`/admin/user/[userId]`) includes **Assign Workouts**: admins can select a date and apply one of that target user’s saved presets. Assignment appends Supabase `workouts` rows for that `user_id` with `isDraft: true`, preserving existing day rows and using the same preset-draft pattern as normal user flow (`Added from preset — enter your sets to log this workout.`). Missing exact exercise configs (name + config) are created for that target user before draft insertion.
+  - Admin user detail (`/admin/user/[userId]`) includes **Create Preset for User**: admins can build and save a preset owned by the target user. The inserted Supabase `presets` row always uses that route’s `userId` as `user_id` (never the admin id), appends as a new row, and is immediately available in the existing **Assign Workouts** preset picker for assigning to that user’s workout dates.
 - **Top nav visibility:** `app/top-nav.tsx` calls `GET /api/admin/nav-access` with the signed-in access token; only authorized admin sessions see `Admin Panel`.
 - **Normal users:** `/admin` is hidden from main nav; regular app routes and behavior are unchanged.
 
