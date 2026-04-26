@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
+  addAdminHistoricalPresetToUserDateAction,
   assignAdminPresetToUserDateAction,
   createAdminPresetForUserAction,
+  fetchAdminUserRestDatesAction,
   fetchAdminAssignablePresetsAction,
-  fetchAdminUserWorkoutsAction
+  fetchAdminUserWorkoutsAction,
+  setAdminUserRestDayAction
 } from "@/lib/admin/adminDataActions";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -64,9 +67,21 @@ type AssignablePreset = {
   id: string;
   name: string;
   exerciseCount: number;
+  exercises: Array<{
+    id: string;
+    name: string;
+    type: "weight" | "bodyweight" | "time";
+    targetReps: number;
+    setCount: number;
+    increment: number;
+    unit: "lbs" | "kg";
+    trackRir: boolean;
+    trackRpe: boolean;
+  }>;
 };
 type PresetExerciseDraft = {
   name: string;
+  exerciseType: "weight" | "bodyweight" | "time";
   targetMode: "reps" | "time";
   targetReps: number;
   setCount: number;
@@ -78,6 +93,7 @@ type PresetExerciseDraft = {
 
 const initialPresetExerciseDraft: PresetExerciseDraft = {
   name: "",
+  exerciseType: "weight",
   targetMode: "reps",
   targetReps: 8,
   setCount: 3,
@@ -99,9 +115,17 @@ export function AdminUserWorkoutsClient({
   const [assignablePresets, setAssignablePresets] = useState<AssignablePreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [assignDate, setAssignDate] = useState(new Date().toISOString().slice(0, 10));
+  const [addWorkoutMode, setAddWorkoutMode] = useState<"planned" | "historical">("planned");
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignMessage, setAssignMessage] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [historicalSetsByExerciseId, setHistoricalSetsByExerciseId] = useState<
+    Record<string, Array<{ weight: string; reps: string; timeSeconds: string; rir: string; tir: string; rpe: string }>>
+  >({});
+  const [draftPrefillByExerciseId, setDraftPrefillByExerciseId] = useState<
+    Record<string, { weight: string; reps: string; timeSeconds: string; rir: string; tir: string; rpe: string }>
+  >({});
+  const [restDates, setRestDates] = useState<string[]>([]);
   const [adminAccessToken, setAdminAccessToken] = useState<string | null>(null);
   const [fetchMessage, setFetchMessage] = useState<string | null>(null);
   const [newPresetName, setNewPresetName] = useState("");
@@ -112,11 +136,16 @@ export function AdminUserWorkoutsClient({
   const [isCreatingPreset, setIsCreatingPreset] = useState(false);
   const [createPresetMessage, setCreatePresetMessage] = useState<string | null>(null);
   const [createPresetError, setCreatePresetError] = useState<string | null>(null);
+  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
+  const [isUpdatingRestDay, setIsUpdatingRestDay] = useState(false);
+
+  const selectedPreset = assignablePresets.find((preset) => preset.id === selectedPresetId) ?? null;
 
   const loadUserAdminData = useCallback(async (accessToken: string) => {
-    const [workoutsRes, presetsRes] = await Promise.all([
+    const [workoutsRes, presetsRes, restDatesRes] = await Promise.all([
       fetchAdminUserWorkoutsAction(userId, accessToken),
-      fetchAdminAssignablePresetsAction(userId, accessToken)
+      fetchAdminAssignablePresetsAction(userId, accessToken),
+      fetchAdminUserRestDatesAction(userId, accessToken)
     ]);
 
     if (!workoutsRes.ok) {
@@ -130,9 +159,15 @@ export function AdminUserWorkoutsClient({
       setPhase("fetch_error");
       return false;
     }
+    if (!restDatesRes.ok) {
+      setFetchMessage(restDatesRes.message);
+      setPhase("fetch_error");
+      return false;
+    }
 
     setRows(workoutsRes.data as WorkoutRow[]);
     setAssignablePresets(presetsRes.data as AssignablePreset[]);
+    setRestDates(restDatesRes.data.restDates);
     setSelectedPresetId((current) => {
       if (current && presetsRes.data.some((preset) => preset.id === current)) return current;
       return presetsRes.data[0]?.id ?? "";
@@ -140,6 +175,47 @@ export function AdminUserWorkoutsClient({
     setPhase("ready");
     return true;
   }, [userId]);
+
+  useEffect(() => {
+    if (!selectedPreset) return;
+    setHistoricalSetsByExerciseId((current) => {
+      const next: Record<string, Array<{ weight: string; reps: string; timeSeconds: string; rir: string; tir: string; rpe: string }>> = {};
+      for (const exercise of selectedPreset.exercises) {
+        const existing = current[exercise.id];
+        if (existing && existing.length === exercise.setCount) {
+          next[exercise.id] = existing;
+          continue;
+        }
+        next[exercise.id] = Array.from({ length: Math.max(1, exercise.setCount) }, () => ({
+          weight: "",
+          reps: "",
+          timeSeconds: "",
+          rir: "",
+          tir: "",
+          rpe: ""
+        }));
+      }
+      return next;
+    });
+  }, [selectedPreset]);
+
+  useEffect(() => {
+    if (!selectedPreset) return;
+    setDraftPrefillByExerciseId((current) => {
+      const next: Record<string, { weight: string; reps: string; timeSeconds: string; rir: string; tir: string; rpe: string }> = {};
+      for (const exercise of selectedPreset.exercises) {
+        next[exercise.id] = current[exercise.id] ?? {
+          weight: "",
+          reps: "",
+          timeSeconds: "",
+          rir: "",
+          tir: "",
+          rpe: ""
+        };
+      }
+      return next;
+    });
+  }, [selectedPreset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,6 +336,21 @@ export function AdminUserWorkoutsClient({
             className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
             placeholder="Exercise name"
           />
+          <select
+            value={presetExerciseDraft.exerciseType}
+            onChange={(event) =>
+              setPresetExerciseDraft((prev) => ({
+                ...prev,
+                exerciseType: event.target.value as "weight" | "bodyweight" | "time",
+                targetMode: event.target.value === "time" ? "time" : "reps"
+              }))
+            }
+            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+          >
+            <option value="weight">Weight</option>
+            <option value="bodyweight">Bodyweight</option>
+            <option value="time">Time</option>
+          </select>
           <div className="grid gap-2 sm:grid-cols-2">
             <select
               value={presetExerciseDraft.targetMode}
@@ -371,6 +462,7 @@ export function AdminUserWorkoutsClient({
                     <div>
                       <p className="font-medium text-slate-900">{exercise.name}</p>
                       <p className="text-slate-600">
+                        {exercise.exerciseType} ·{" "}
                         {exercise.setCount} sets ·{" "}
                         {exercise.targetMode === "time"
                           ? `T ${exercise.targetReps}s`
@@ -419,7 +511,9 @@ export function AdminUserWorkoutsClient({
                 {
                   name: trimmedName,
                   exercises: newPresetExercises.map((exercise) => ({
+                    id: crypto.randomUUID(),
                     name: exercise.name,
+                    type: exercise.exerciseType,
                     targetReps: exercise.targetReps,
                     setCount: exercise.setCount,
                     increment: exercise.increment,
@@ -461,7 +555,85 @@ export function AdminUserWorkoutsClient({
       </div>
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Assign Workouts</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Add Workout for User</h3>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Calendar control</p>
+          <p className="mt-1 text-xs text-slate-600">
+            {restDates.includes(assignDate) ? "This date is currently marked as rest day." : "This date is not marked as rest day."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={isUpdatingRestDay || !adminAccessToken || !assignDate}
+              onClick={async () => {
+                if (!adminAccessToken || !assignDate) return;
+                setAssignMessage(null);
+                setAssignError(null);
+                setIsUpdatingRestDay(true);
+                const result = await setAdminUserRestDayAction(userId, assignDate, true, adminAccessToken);
+                if (!result.ok) {
+                  setAssignError(result.message);
+                  setIsUpdatingRestDay(false);
+                  return;
+                }
+                setRestDates(result.data.restDates);
+                setAssignMessage("Marked this date as rest day for this user.");
+                await loadUserAdminData(adminAccessToken);
+                setIsUpdatingRestDay(false);
+              }}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Mark rest day
+            </button>
+            <button
+              type="button"
+              disabled={isUpdatingRestDay || !adminAccessToken || !assignDate}
+              onClick={async () => {
+                if (!adminAccessToken || !assignDate) return;
+                setAssignMessage(null);
+                setAssignError(null);
+                setIsUpdatingRestDay(true);
+                const result = await setAdminUserRestDayAction(userId, assignDate, false, adminAccessToken);
+                if (!result.ok) {
+                  setAssignError(result.message);
+                  setIsUpdatingRestDay(false);
+                  return;
+                }
+                setRestDates(result.data.restDates);
+                setAssignMessage("Cleared rest day for this user.");
+                await loadUserAdminData(adminAccessToken);
+                setIsUpdatingRestDay(false);
+              }}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Clear rest day
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setAddWorkoutMode("planned")}
+            className={`rounded-md border px-3 py-2 text-sm font-medium ${
+              addWorkoutMode === "planned"
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            Assign as planned workout
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddWorkoutMode("historical")}
+            className={`rounded-md border px-3 py-2 text-sm font-medium ${
+              addWorkoutMode === "historical"
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            Add as completed historical workout
+          </button>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-medium text-slate-600">Date</span>
@@ -491,43 +663,293 @@ export function AdminUserWorkoutsClient({
             </select>
           </label>
         </div>
+        {addWorkoutMode === "historical" && selectedPreset ? (
+          <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completed set data</p>
+            {selectedPreset.exercises.map((exercise) => (
+              <div key={exercise.id} className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+                <p className="text-sm font-medium text-slate-900">
+                  {exercise.name} ({exercise.type}) · {exercise.setCount} sets
+                </p>
+                <div className="space-y-2">
+                  {(historicalSetsByExerciseId[exercise.id] ?? []).map((set, setIndex) => (
+                    <div key={`${exercise.id}-${setIndex}`} className="grid gap-2 sm:grid-cols-6">
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={set.weight}
+                        onChange={(event) =>
+                          setHistoricalSetsByExerciseId((prev) => ({
+                            ...prev,
+                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                              i === setIndex ? { ...item, weight: event.target.value } : item
+                            )
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        placeholder="Weight"
+                      />
+                      <input
+                        type="number"
+                        step={1}
+                        value={set.reps}
+                        onChange={(event) =>
+                          setHistoricalSetsByExerciseId((prev) => ({
+                            ...prev,
+                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                              i === setIndex ? { ...item, reps: event.target.value } : item
+                            )
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        placeholder="Reps"
+                      />
+                      <input
+                        type="number"
+                        step={1}
+                        value={set.timeSeconds}
+                        onChange={(event) =>
+                          setHistoricalSetsByExerciseId((prev) => ({
+                            ...prev,
+                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                              i === setIndex ? { ...item, timeSeconds: event.target.value } : item
+                            )
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        placeholder="Time (s)"
+                      />
+                      <input
+                        type="text"
+                        value={set.rir}
+                        onChange={(event) =>
+                          setHistoricalSetsByExerciseId((prev) => ({
+                            ...prev,
+                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                              i === setIndex ? { ...item, rir: event.target.value } : item
+                            )
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        placeholder="RIR"
+                      />
+                      <input
+                        type="text"
+                        value={set.tir}
+                        onChange={(event) =>
+                          setHistoricalSetsByExerciseId((prev) => ({
+                            ...prev,
+                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                              i === setIndex ? { ...item, tir: event.target.value } : item
+                            )
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        placeholder="TIR"
+                      />
+                      <input
+                        type="text"
+                        value={set.rpe}
+                        onChange={(event) =>
+                          setHistoricalSetsByExerciseId((prev) => ({
+                            ...prev,
+                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                              i === setIndex ? { ...item, rpe: event.target.value } : item
+                            )
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        placeholder="RPE"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {addWorkoutMode === "planned" && selectedPreset ? (
+          <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Optional planned prefill targets
+            </p>
+            {selectedPreset.exercises.map((exercise) => {
+              const prefill = draftPrefillByExerciseId[exercise.id] ?? {
+                weight: "",
+                reps: "",
+                timeSeconds: "",
+                rir: "",
+                tir: "",
+                rpe: ""
+              };
+              return (
+                <div key={exercise.id} className="grid gap-2 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-6">
+                  <p className="sm:col-span-6 text-sm font-medium text-slate-900">{exercise.name}</p>
+                  <input
+                    type="number"
+                    step={0.5}
+                    value={prefill.weight}
+                    onChange={(event) =>
+                      setDraftPrefillByExerciseId((prev) => ({
+                        ...prev,
+                        [exercise.id]: { ...prefill, weight: event.target.value }
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    placeholder="Weight"
+                  />
+                  <input
+                    type="number"
+                    step={1}
+                    value={prefill.reps}
+                    onChange={(event) =>
+                      setDraftPrefillByExerciseId((prev) => ({
+                        ...prev,
+                        [exercise.id]: { ...prefill, reps: event.target.value }
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    placeholder="Reps"
+                  />
+                  <input
+                    type="number"
+                    step={1}
+                    value={prefill.timeSeconds}
+                    onChange={(event) =>
+                      setDraftPrefillByExerciseId((prev) => ({
+                        ...prev,
+                        [exercise.id]: { ...prefill, timeSeconds: event.target.value }
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    placeholder="Time (s)"
+                  />
+                  <input
+                    type="text"
+                    value={prefill.rir}
+                    onChange={(event) =>
+                      setDraftPrefillByExerciseId((prev) => ({
+                        ...prev,
+                        [exercise.id]: { ...prefill, rir: event.target.value }
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    placeholder="RIR"
+                  />
+                  <input
+                    type="text"
+                    value={prefill.tir}
+                    onChange={(event) =>
+                      setDraftPrefillByExerciseId((prev) => ({
+                        ...prev,
+                        [exercise.id]: { ...prefill, tir: event.target.value }
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    placeholder="TIR"
+                  />
+                  <input
+                    type="text"
+                    value={prefill.rpe}
+                    onChange={(event) =>
+                      setDraftPrefillByExerciseId((prev) => ({
+                        ...prev,
+                        [exercise.id]: { ...prefill, rpe: event.target.value }
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    placeholder="RPE"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={
-              isAssigning || !adminAccessToken || !selectedPresetId || !assignDate || assignablePresets.length === 0
+              (isAssigning || isSavingWorkout) ||
+              !adminAccessToken ||
+              !selectedPresetId ||
+              !assignDate ||
+              assignablePresets.length === 0
             }
             onClick={async () => {
               if (!adminAccessToken || !selectedPresetId || !assignDate) return;
-              const confirmed = window.confirm(
-                "Assign this preset to the selected date for this user? Existing workouts on that date will be kept."
-              );
-              if (!confirmed) return;
-
-              setIsAssigning(true);
               setAssignMessage(null);
               setAssignError(null);
-              const assignRes = await assignAdminPresetToUserDateAction(
-                userId,
-                selectedPresetId,
-                assignDate,
-                adminAccessToken
-              );
-              if (!assignRes.ok) {
-                setAssignError(assignRes.message);
+              if (addWorkoutMode === "planned") {
+                if (!selectedPreset) {
+                  setAssignError("Select a preset.");
+                  return;
+                }
+                const confirmed = window.confirm(
+                  "Assign this preset to the selected date for this user? Existing workouts on that date will be kept."
+                );
+                if (!confirmed) return;
+                setIsAssigning(true);
+                const assignRes = await assignAdminPresetToUserDateAction(
+                  userId,
+                  selectedPresetId,
+                  assignDate,
+                  adminAccessToken,
+                  selectedPreset.exercises.map((exercise) => ({
+                    presetExerciseId: exercise.id,
+                    prefill: draftPrefillByExerciseId[exercise.id]
+                  }))
+                );
+                if (!assignRes.ok) {
+                  setAssignError(assignRes.message);
+                  setIsAssigning(false);
+                  return;
+                }
+                setAssignMessage(`Assigned ${assignRes.data.assignedCount} planned workout(s) to this user.`);
+                await loadUserAdminData(adminAccessToken);
                 setIsAssigning(false);
                 return;
               }
 
-              setAssignMessage(
-                `Assigned ${assignRes.data.assignedCount} workout(s) to this user for ${assignRes.data.date}.`
+              if (!selectedPreset || selectedPreset.exercises.length === 0) {
+                setAssignError("Select a preset with exercises.");
+                return;
+              }
+              setIsSavingWorkout(true);
+              const historicalRes = await addAdminHistoricalPresetToUserDateAction(
+                userId,
+                {
+                  presetId: selectedPresetId,
+                  date: assignDate,
+                  exercises: selectedPreset.exercises.map((exercise) => ({
+                    presetExerciseId: exercise.id,
+                    sets: (historicalSetsByExerciseId[exercise.id] ?? []).map((set) => ({
+                      weight: set.weight,
+                      reps: set.reps,
+                      timeSeconds: set.timeSeconds,
+                      rir: set.rir,
+                      tir: set.tir,
+                      rpe: set.rpe
+                    }))
+                  }))
+                },
+                adminAccessToken
               );
+              if (!historicalRes.ok) {
+                setAssignError(historicalRes.message);
+                setIsSavingWorkout(false);
+                return;
+              }
+              setAssignMessage(`Added ${historicalRes.data.addedCount} historical workout(s) to this user.`);
               await loadUserAdminData(adminAccessToken);
-              setIsAssigning(false);
+              setIsSavingWorkout(false);
             }}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isAssigning ? "Assigning..." : "Assign to user"}
+            {isAssigning || isSavingWorkout
+              ? "Saving..."
+              : addWorkoutMode === "planned"
+                ? "Assign planned workout"
+                : "Add historical workout"}
           </button>
         </div>
         {assignMessage ? (

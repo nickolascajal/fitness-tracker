@@ -3,12 +3,18 @@
 import { createClient } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
 import {
+  type AdminDraftPrefillByExercise,
+  getRestDatesForUser,
+  setRestDayForUser,
+  addHistoricalPresetWorkoutsToUserDate,
   assignPresetDraftsToUserDate,
   cleanupOrphanedRows,
   createPresetForUser,
   getAssignablePresetsForUser,
   getAdminOverview,
   getUserWorkoutsForAdmin,
+  type AdminAddHistoricalPresetInput,
+  type AdminAddHistoricalResult,
   type AdminCreatePresetInput,
   type AdminCreatePresetResult,
   type AdminAssignablePreset,
@@ -58,8 +64,24 @@ export type AdminAssignPresetActionResult =
       message: string;
     };
 
+export type AdminRestDatesActionResult =
+  | { ok: true; data: { restDates: string[] } }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
 export type AdminCreatePresetActionResult =
   | { ok: true; data: AdminCreatePresetResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminAddHistoricalActionResult =
+  | { ok: true; data: AdminAddHistoricalResult }
   | {
       ok: false;
       code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
@@ -217,7 +239,8 @@ export async function assignAdminPresetToUserDateAction(
   userId: string,
   presetId: string,
   date: string,
-  accessToken: string
+  accessToken: string,
+  prefilledByExercise: AdminDraftPrefillByExercise[] = []
 ): Promise<AdminAssignPresetActionResult> {
   noStore();
   if (!UUID_RE.test(userId)) {
@@ -236,7 +259,7 @@ export async function assignAdminPresetToUserDateAction(
   }
 
   try {
-    const data = await assignPresetDraftsToUserDate(userId, presetId, date);
+    const data = await assignPresetDraftsToUserDate(userId, presetId, date, prefilledByExercise);
     return { ok: true, data };
   } catch (error) {
     return {
@@ -246,6 +269,60 @@ export async function assignAdminPresetToUserDateAction(
         error instanceof Error && error.message
           ? error.message
           : "Could not assign preset workouts to this user."
+    };
+  }
+}
+
+export async function fetchAdminUserRestDatesAction(
+  userId: string,
+  accessToken: string
+): Promise<AdminRestDatesActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    const restDates = await getRestDatesForUser(userId);
+    return { ok: true, data: { restDates } };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message: error instanceof Error && error.message ? error.message : "Could not load rest dates."
+    };
+  }
+}
+
+export async function setAdminUserRestDayAction(
+  userId: string,
+  date: string,
+  isRest: boolean,
+  accessToken: string
+): Promise<AdminRestDatesActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, code: "bad_request", message: "Invalid date format." };
+  }
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    await setRestDayForUser(userId, date, isRest);
+    const restDates = await getRestDatesForUser(userId);
+    return { ok: true, data: { restDates } };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message: error instanceof Error && error.message ? error.message : "Could not update rest day."
     };
   }
 }
@@ -279,6 +356,39 @@ export async function createAdminPresetForUserAction(
         error instanceof Error && error.message
           ? error.message
           : "Could not create preset for this user."
+    };
+  }
+}
+
+export async function addAdminHistoricalPresetToUserDateAction(
+  userId: string,
+  input: AdminAddHistoricalPresetInput,
+  accessToken: string
+): Promise<AdminAddHistoricalActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!input || typeof input !== "object") {
+    return { ok: false, code: "bad_request", message: "Invalid historical payload." };
+  }
+
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+
+  try {
+    const data = await addHistoricalPresetWorkoutsToUserDate(userId, input);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message:
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not add historical workouts for this user."
     };
   }
 }

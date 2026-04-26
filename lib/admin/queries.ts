@@ -1,6 +1,9 @@
 import { getServiceRoleSupabase } from "./supabaseServiceRole";
 import { parseWorkoutEntryFromJson, type AdminWorkoutDisplayEntry } from "./parseWorkoutEntry";
 import { unstable_noStore as noStore } from "next/cache";
+import { calculateCPSWithOptions } from "@/lib/calculateCPS";
+import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
+import { generateRecommendation } from "@/lib/generateRecommendation";
 
 export type AdminUserSummary = {
   userId: string;
@@ -214,6 +217,7 @@ export type AdminAssignablePreset = {
   id: string;
   name: string;
   exerciseCount: number;
+  exercises: PresetExerciseConfig[];
 };
 
 export type AdminAssignPresetResult = {
@@ -222,7 +226,9 @@ export type AdminAssignPresetResult = {
 };
 
 export type AdminCreatePresetExercise = {
+  id?: string;
   name: string;
+  type?: "weight" | "bodyweight" | "time";
   targetReps: number;
   setCount: number;
   increment: number;
@@ -238,6 +244,45 @@ export type AdminCreatePresetInput = {
 
 export type AdminCreatePresetResult = {
   presetId: string;
+};
+
+export type AdminHistoricalSetInput = {
+  weight: string;
+  reps: string;
+  timeSeconds: string;
+  rir?: string;
+  tir?: string;
+  rpe?: string;
+};
+
+export type AdminHistoricalPresetExerciseInput = {
+  presetExerciseId: string;
+  sets: AdminHistoricalSetInput[];
+};
+
+export type AdminAddHistoricalPresetInput = {
+  presetId: string;
+  date: string;
+  exercises: AdminHistoricalPresetExerciseInput[];
+};
+
+export type AdminAddHistoricalResult = {
+  addedCount: number;
+  date: string;
+};
+
+export type AdminDraftPrefillInput = {
+  weight?: string;
+  reps?: string;
+  timeSeconds?: string;
+  rir?: string;
+  tir?: string;
+  rpe?: string;
+};
+
+export type AdminDraftPrefillByExercise = {
+  presetExerciseId: string;
+  prefill?: AdminDraftPrefillInput;
 };
 
 export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUserWorkoutRow[]> {
@@ -261,7 +306,8 @@ export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUser
     created_at?: string | null;
   }>;
 
-  return rows.map((row) => {
+  return rows
+    .map((row) => {
     let payload: unknown = row.data;
     if (typeof payload === "string") {
       try {
@@ -269,6 +315,9 @@ export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUser
       } catch {
         payload = null;
       }
+    }
+    if (parseRestDayMarkerPayload(payload)) {
+      return null;
     }
     const parsed = parseWorkoutEntryFromJson(payload, row.date ?? null);
     const rawPreview =
@@ -285,11 +334,14 @@ export async function getUserWorkoutsForAdmin(userId: string): Promise<AdminUser
       parsed,
       rawPreview
     };
-  });
+  })
+    .filter((row): row is AdminUserWorkoutRow => Boolean(row));
 }
 
 type PresetExerciseConfig = {
+  id: string;
   name: string;
+  type: "weight" | "bodyweight" | "time";
   targetReps: number;
   setCount: number;
   increment: number;
@@ -305,29 +357,50 @@ type StoredUserExercise = {
   targetReps: number;
   increment: number;
   unit: "lbs" | "kg";
+  type: "weight" | "bodyweight" | "time";
+  foundation: number;
   trackRir: boolean;
   trackRpe: boolean;
 };
 
+type RestDayMarkerPayload = {
+  calendarMarker: "rest_day";
+  date: string;
+  createdAt: string;
+};
+
+const REST_DAY_MARKER = "rest_day";
+
 function safePresetExercises(input: unknown): PresetExerciseConfig[] {
   if (!Array.isArray(input)) return [];
   return input
-    .filter((exercise): exercise is PresetExerciseConfig => {
-      if (!exercise || typeof exercise !== "object") return false;
+    .map((exercise, index): PresetExerciseConfig | null => {
+      if (!exercise || typeof exercise !== "object") return null;
       const row = exercise as Partial<PresetExerciseConfig>;
-      return (
-        typeof row.name === "string" &&
-        typeof row.targetReps === "number" &&
-        typeof row.setCount === "number" &&
-        typeof row.increment === "number"
-      );
+      if (
+        typeof row.name !== "string" ||
+        typeof row.targetReps !== "number" ||
+        typeof row.setCount !== "number" ||
+        typeof row.increment !== "number"
+      ) {
+        return null;
+      }
+      return {
+        id:
+          typeof row.id === "string" && row.id.trim() !== ""
+            ? row.id
+            : `legacy-${index}-${row.name.trim().toLowerCase()}`,
+        name: row.name,
+        type: row.type === "time" || row.type === "bodyweight" ? row.type : "weight",
+        targetReps: row.targetReps,
+        setCount: row.setCount,
+        increment: row.increment,
+        unit: row.unit === "kg" ? "kg" : "lbs",
+        trackRir: row.trackRir === true,
+        trackRpe: row.trackRpe === true
+      };
     })
-    .map((exercise) => ({
-      ...exercise,
-      unit: exercise.unit === "kg" ? "kg" : "lbs",
-      trackRir: exercise.trackRir === true,
-      trackRpe: exercise.trackRpe === true
-    }));
+    .filter((exercise): exercise is PresetExerciseConfig => Boolean(exercise));
 }
 
 function parseAssignablePresetRow(
@@ -366,14 +439,86 @@ function parseStoredExerciseRow(
     targetReps: payload.targetReps,
     increment: payload.increment,
     unit: payload.unit === "kg" ? "kg" : "lbs",
+    type: payload.type === "time" || payload.type === "bodyweight" ? payload.type : "weight",
+    foundation: Number.isFinite(payload.foundation) ? Number(payload.foundation) : 0,
     trackRir: payload.trackRir === true,
     trackRpe: payload.trackRpe === true
   };
 }
 
+function parseRestDayMarkerPayload(payload: unknown): RestDayMarkerPayload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as Record<string, unknown>;
+  if (row.calendarMarker !== REST_DAY_MARKER) return null;
+  if (typeof row.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return null;
+  return {
+    calendarMarker: REST_DAY_MARKER,
+    date: row.date,
+    createdAt: typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString()
+  };
+}
+
+function computeSessionVolumeFromSetInputs(sets: AdminHistoricalSetInput[]): number {
+  return sets.reduce((acc, set) => {
+    const weight = Number(set.weight);
+    const reps = Number(set.reps);
+    if (!Number.isFinite(weight) || !Number.isFinite(reps)) return acc;
+    return acc + weight * reps;
+  }, 0);
+}
+
+function buildEffectiveCpsSets(
+  sets: Array<{ weight: string; reps: string }>,
+  foundation: number
+): Array<{ weight: string | number; reps: string }> {
+  return sets.map((set) => {
+    const enteredWeight = Number(set.weight);
+    if (enteredWeight === 0 && foundation > 0) {
+      return { ...set, weight: foundation };
+    }
+    return set;
+  });
+}
+
+function normalizeHistoricalSetInput(
+  set: AdminHistoricalSetInput,
+  exerciseType: "weight" | "bodyweight" | "time",
+  trackRir: boolean,
+  trackRpe: boolean
+) {
+  const time = Number(set.timeSeconds);
+  return {
+    weight: set.weight,
+    reps: set.reps,
+    timeSeconds: Number.isFinite(time) && time > 0 ? time : 0,
+    rir: trackRir && exerciseType !== "time" ? (set.rir ?? "") : "",
+    tir: trackRir && exerciseType === "time" ? (set.tir ?? "") : "",
+    rpe: trackRpe ? (set.rpe ?? "") : ""
+  };
+}
+
+function hasAtLeastOneValidHistoricalSet(
+  sets: AdminHistoricalSetInput[],
+  exerciseType: "weight" | "bodyweight" | "time",
+  foundation: number
+): boolean {
+  if (exerciseType === "time") {
+    return sets.some((set) => Number(set.timeSeconds) > 0);
+  }
+  return sets.some((set) => {
+    const reps = Number(set.reps);
+    const weight = Number(set.weight);
+    if (!(reps > 0)) return false;
+    if (weight > 0) return true;
+    if (exerciseType === "bodyweight" && foundation > 0 && weight === 0) return true;
+    return false;
+  });
+}
+
 function sameConfig(exercise: StoredUserExercise, presetExercise: PresetExerciseConfig): boolean {
   return (
     exercise.name.trim().toLowerCase() === presetExercise.name.trim().toLowerCase() &&
+    exercise.type === presetExercise.type &&
     exercise.setCount === presetExercise.setCount &&
     exercise.targetReps === presetExercise.targetReps &&
     exercise.increment === presetExercise.increment &&
@@ -383,15 +528,22 @@ function sameConfig(exercise: StoredUserExercise, presetExercise: PresetExercise
   );
 }
 
-function buildDraftSets(setCount: number) {
+function buildDraftSetsWithPrefill(setCount: number, prefill?: AdminDraftPrefillInput) {
   const count = Math.max(1, Math.floor(setCount));
+  const normalizedWeight = (prefill?.weight ?? "").trim();
+  const normalizedReps = (prefill?.reps ?? "").trim();
+  const normalizedRir = (prefill?.rir ?? "").trim();
+  const normalizedTir = (prefill?.tir ?? "").trim();
+  const normalizedRpe = (prefill?.rpe ?? "").trim();
+  const rawTime = Number(prefill?.timeSeconds ?? "");
+  const normalizedTime = Number.isFinite(rawTime) && rawTime > 0 ? rawTime : 0;
   return Array.from({ length: count }, () => ({
-    weight: "",
-    reps: "",
-    timeSeconds: 0,
-    rir: "",
-    tir: "",
-    rpe: ""
+    weight: normalizedWeight,
+    reps: normalizedReps,
+    timeSeconds: normalizedTime,
+    rir: normalizedRir,
+    tir: normalizedTir,
+    rpe: normalizedRpe
   }));
 }
 
@@ -417,16 +569,102 @@ export async function getAssignablePresetsForUser(userId: string): Promise<Admin
     presets.push({
       id: parsed.id,
       name: parsed.name,
-      exerciseCount: parsed.exercises.length
+      exerciseCount: parsed.exercises.length,
+      exercises: parsed.exercises
     });
   }
   return presets;
 }
 
+export async function getRestDatesForUser(userId: string): Promise<string[]> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const { data, error } = await admin.from("workouts").select("date,data").eq("user_id", userId);
+  if (error) {
+    throw new Error(`Failed to load rest dates: ${error.message}`);
+  }
+  const out = new Set<string>();
+  for (const row of (data ?? []) as Array<{ date?: string | null; data?: unknown }>) {
+    let payload = row.data;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = null;
+      }
+    }
+    const marker = parseRestDayMarkerPayload(payload);
+    if (!marker) continue;
+    out.add(marker.date || (typeof row.date === "string" ? row.date : ""));
+  }
+  return Array.from(out).filter(Boolean).sort();
+}
+
+export async function setRestDayForUser(userId: string, date: string, isRest: boolean): Promise<void> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const { data, error } = await admin
+    .from("workouts")
+    .select("id,data")
+    .eq("user_id", userId)
+    .eq("date", date);
+  if (error) {
+    throw new Error(`Failed to update rest day: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{ id?: string | number; data?: unknown }>;
+  const markerRowIds: string[] = [];
+  let hasRealWorkouts = false;
+  for (const row of rows) {
+    let payload = row.data;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = null;
+      }
+    }
+    if (parseRestDayMarkerPayload(payload)) {
+      if (row.id != null) markerRowIds.push(String(row.id));
+      continue;
+    }
+    hasRealWorkouts = true;
+  }
+
+  if (isRest) {
+    if (hasRealWorkouts) {
+      throw new Error("Cannot mark rest day because workouts already exist on that date.");
+    }
+    if (markerRowIds.length > 0) {
+      return;
+    }
+    const payload: RestDayMarkerPayload = {
+      calendarMarker: REST_DAY_MARKER,
+      date,
+      createdAt: new Date().toISOString()
+    };
+    const { error: insertError } = await admin.from("workouts").insert({
+      user_id: userId,
+      date,
+      data: payload
+    });
+    if (insertError) {
+      throw new Error(`Failed to mark rest day: ${insertError.message}`);
+    }
+    return;
+  }
+
+  if (markerRowIds.length === 0) return;
+  const { error: deleteError } = await admin.from("workouts").delete().in("id", markerRowIds).eq("user_id", userId);
+  if (deleteError) {
+    throw new Error(`Failed to clear rest day: ${deleteError.message}`);
+  }
+}
+
 export async function assignPresetDraftsToUserDate(
   userId: string,
   presetId: string,
-  date: string
+  date: string,
+  prefilledByExercise: AdminDraftPrefillByExercise[] = []
 ): Promise<AdminAssignPresetResult> {
   noStore();
   const admin = getServiceRoleSupabase();
@@ -445,6 +683,52 @@ export async function assignPresetDraftsToUserDate(
   const selectedPreset = parsedPresets.find((preset) => preset.id === presetId);
   if (!selectedPreset) {
     throw new Error("Selected preset was not found for this user.");
+  }
+  const { data: dateRows, error: dateRowsError } = await admin
+    .from("workouts")
+    .select("data")
+    .eq("user_id", userId)
+    .eq("date", date);
+  if (dateRowsError) {
+    throw new Error(`Failed to verify date availability: ${dateRowsError.message}`);
+  }
+  const isRestDay = ((dateRows ?? []) as Array<{ data?: unknown }>).some((row) => {
+    let payload = row.data;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = null;
+      }
+    }
+    return parseRestDayMarkerPayload(payload) !== null;
+  });
+  if (isRestDay) {
+    throw new Error("That date is marked as a rest day. Clear rest day first.");
+  }
+  const prefillMap = new Map(prefilledByExercise.map((item) => [item.presetExerciseId, item.prefill]));
+
+  const { data: dateRows, error: dateRowsError } = await admin
+    .from("workouts")
+    .select("id,data")
+    .eq("user_id", userId)
+    .eq("date", date);
+  if (dateRowsError) {
+    throw new Error(`Failed to verify date availability: ${dateRowsError.message}`);
+  }
+  const isRestDay = ((dateRows ?? []) as Array<{ data?: unknown }>).some((row) => {
+    let payload = row.data;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = null;
+      }
+    }
+    return parseRestDayMarkerPayload(payload) !== null;
+  });
+  if (isRestDay) {
+    throw new Error("That date is marked as a rest day. Clear rest day first.");
   }
 
   const { data: exerciseRows, error: exercisesError } = await admin
@@ -472,6 +756,8 @@ export async function assignPresetDraftsToUserDate(
         targetReps: presetExercise.targetReps,
         increment: presetExercise.increment,
         unit: presetExercise.unit,
+        type: presetExercise.type,
+        foundation: 0,
         trackRir: presetExercise.trackRir,
         trackRpe: presetExercise.trackRpe
       };
@@ -479,7 +765,7 @@ export async function assignPresetDraftsToUserDate(
         user_id: userId,
         data: {
           ...newExercise,
-          type: "weight",
+          type: presetExercise.type,
           foundation: 0,
           isUserCreated: true
         }
@@ -500,7 +786,7 @@ export async function assignPresetDraftsToUserDate(
         exerciseName: matched.name,
         workoutDate: date,
         isDraft: true,
-        sets: buildDraftSets(matched.setCount),
+        sets: buildDraftSetsWithPrefill(matched.setCount, prefillMap.get(presetExercise.id)),
         sessionVolume: 0,
         sessionCps: null,
         progressionStage: "—",
@@ -537,7 +823,9 @@ export async function createPresetForUser(
 
   const sanitizedExercises = input.exercises
     .map((exercise) => ({
+      id: typeof exercise.id === "string" && exercise.id.trim() !== "" ? exercise.id : crypto.randomUUID(),
       name: exercise.name.trim(),
+      type: exercise.type === "time" || exercise.type === "bodyweight" ? exercise.type : "weight",
       targetReps: Number(exercise.targetReps),
       setCount: Number(exercise.setCount),
       increment: Number(exercise.increment),
@@ -547,6 +835,7 @@ export async function createPresetForUser(
     }))
     .filter(
       (exercise) =>
+        exercise.id !== "" &&
         exercise.name !== "" &&
         Number.isFinite(exercise.targetReps) &&
         Number.isFinite(exercise.setCount) &&
@@ -578,6 +867,146 @@ export async function createPresetForUser(
   }
 
   return { presetId };
+}
+
+export async function addHistoricalPresetWorkoutsToUserDate(
+  userId: string,
+  input: AdminAddHistoricalPresetInput
+): Promise<AdminAddHistoricalResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const presetId = input.presetId.trim();
+  const date = input.date.trim();
+  if (!presetId) {
+    throw new Error("Preset is required.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Invalid date format.");
+  }
+  if (!Array.isArray(input.exercises) || input.exercises.length === 0) {
+    throw new Error("Completed set data is required.");
+  }
+
+  const { data: presetRows, error: presetError } = await admin
+    .from("presets")
+    .select("id,data")
+    .eq("user_id", userId);
+  if (presetError) {
+    throw new Error(`Failed to load presets for import: ${presetError.message}`);
+  }
+  const parsedPresets = ((presetRows ?? []) as Array<{ id?: string | number; data?: unknown }>)
+    .map((row) => parseAssignablePresetRow(row))
+    .filter((preset): preset is { id: string; name: string; exercises: PresetExerciseConfig[] } => Boolean(preset));
+  const selectedPreset = parsedPresets.find((preset) => preset.id === presetId);
+  if (!selectedPreset) {
+    throw new Error("Selected preset was not found for this user.");
+  }
+
+  const completedByPresetExerciseId = new Map(input.exercises.map((exercise) => [exercise.presetExerciseId, exercise]));
+  const { data: exerciseRows, error: exercisesError } = await admin
+    .from("exercises")
+    .select("id,data")
+    .eq("user_id", userId);
+  if (exercisesError) {
+    throw new Error(`Failed to load exercises for import: ${exercisesError.message}`);
+  }
+  const userExercises = ((exerciseRows ?? []) as Array<{ data?: unknown }>)
+    .map((row) => parseStoredExerciseRow(row))
+    .filter((exercise): exercise is StoredUserExercise => Boolean(exercise));
+
+  const now = new Date().toISOString();
+  const completedRows: Array<{ user_id: string; date: string; data: Record<string, unknown> }> = [];
+  for (const presetExercise of selectedPreset.exercises) {
+    const completed = completedByPresetExerciseId.get(presetExercise.id);
+    if (!completed || !Array.isArray(completed.sets) || completed.sets.length === 0) {
+      throw new Error(`Completed sets are required for ${presetExercise.name}.`);
+    }
+    let matched = userExercises.find((exercise) => sameConfig(exercise, presetExercise));
+    if (!matched) {
+      const newExercise: StoredUserExercise = {
+        id: crypto.randomUUID(),
+        name: presetExercise.name,
+        setCount: presetExercise.setCount,
+        targetReps: presetExercise.targetReps,
+        increment: presetExercise.increment,
+        unit: presetExercise.unit,
+        type: presetExercise.type,
+        foundation: 0,
+        trackRir: presetExercise.trackRir,
+        trackRpe: presetExercise.trackRpe
+      };
+      const { error: insertExerciseError } = await admin.from("exercises").insert({
+        user_id: userId,
+        data: {
+          ...newExercise,
+          type: presetExercise.type,
+          foundation: 0,
+          isUserCreated: true
+        }
+      });
+      if (insertExerciseError) {
+        throw new Error(`Failed to create missing exercise config: ${insertExerciseError.message}`);
+      }
+      userExercises.push(newExercise);
+      matched = newExercise;
+    }
+
+    if (!hasAtLeastOneValidHistoricalSet(completed.sets, presetExercise.type, matched.foundation)) {
+      throw new Error(`Add at least one valid completed set for ${presetExercise.name}.`);
+    }
+
+    const performanceSets = completed.sets.map((set) => ({ weight: set.weight, reps: set.reps }));
+    const stage = calculateProgressionStage(performanceSets, matched.targetReps, matched.setCount);
+    const recommendation = generateRecommendation(
+      performanceSets,
+      stage,
+      matched.targetReps,
+      matched.increment
+    );
+    const effectiveCpsSets = buildEffectiveCpsSets(performanceSets, matched.foundation);
+    const cpsInputSets =
+      presetExercise.type === "time"
+        ? completed.sets.map((set) => ({
+            weight: set.weight,
+            reps: set.reps,
+            timeSeconds: Number(set.timeSeconds ?? "")
+          }))
+        : effectiveCpsSets.map((set) => ({ ...set }));
+    const sessionCps = calculateCPSWithOptions(cpsInputSets, matched.targetReps, {
+      exerciseType: presetExercise.type,
+      targetTimeSeconds: matched.targetReps,
+      foundation: matched.foundation
+    });
+    const setsSnapshotForStorage = completed.sets.map((set) =>
+      normalizeHistoricalSetInput(set, presetExercise.type, matched.trackRir, matched.trackRpe)
+    );
+    completedRows.push({
+      user_id: userId,
+      date,
+      data: {
+        workoutId: crypto.randomUUID(),
+        exerciseId: matched.id,
+        exerciseName: matched.name,
+        workoutDate: date,
+        isDraft: false,
+        sets: setsSnapshotForStorage,
+        sessionVolume: computeSessionVolumeFromSetInputs(completed.sets),
+        sessionCps,
+        progressionStage: stage ?? "—",
+        recommendation,
+        submittedAt: now
+      }
+    });
+  }
+
+  if (completedRows.length > 0) {
+    const { error: insertWorkoutError } = await admin.from("workouts").insert(completedRows);
+    if (insertWorkoutError) {
+      throw new Error(`Failed to insert historical workouts: ${insertWorkoutError.message}`);
+    }
+  }
+
+  return { addedCount: completedRows.length, date };
 }
 
 export function groupWorkoutsByDate(rows: AdminUserWorkoutRow[]): Map<string, AdminUserWorkoutRow[]> {

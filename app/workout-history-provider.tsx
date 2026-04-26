@@ -92,6 +92,19 @@ type SupabaseWorkoutRow = {
   data: unknown;
 };
 
+type RestDayMarkerPayload = {
+  calendarMarker: "rest_day";
+  date: string;
+};
+
+function parseRestDayMarkerPayload(payload: unknown): RestDayMarkerPayload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as Record<string, unknown>;
+  if (row.calendarMarker !== "rest_day") return null;
+  if (typeof row.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return null;
+  return { calendarMarker: "rest_day", date: row.date };
+}
+
 function toLocalDateStringFromIso(iso: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return "";
@@ -405,9 +418,20 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         }
 
         const remoteByDate: WorkoutHistoryByDate = {};
+        const remoteRestByDate: RestFlagsByDate = {};
         for (const row of (data as SupabaseWorkoutRow[] | null | undefined) ?? []) {
           try {
             const raw = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+            const restMarker = parseRestDayMarkerPayload(raw);
+            if (restMarker) {
+              const markerDate =
+                restMarker.date ||
+                (typeof row.date === "string" && row.date.trim() !== "" ? row.date : "");
+              if (markerDate) {
+                remoteRestByDate[markerDate] = true;
+              }
+              continue;
+            }
             const normalized = normalizeWorkoutEntry(
               raw as Partial<WorkoutHistoryEntry>,
               typeof row.date === "string" ? row.date : undefined
@@ -423,6 +447,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
             // ignore malformed remote row payloads
           }
         }
+        setRestByDate(remoteRestByDate);
 
         setEntriesByDate((previous) => {
           const { overlay, deletedIds } = buildPendingWorkoutOverlay(previous);
