@@ -684,15 +684,15 @@ export async function assignPresetDraftsToUserDate(
   if (!selectedPreset) {
     throw new Error("Selected preset was not found for this user.");
   }
-  const { data: dateRows, error: dateRowsError } = await admin
+  const { data: workoutDateRows, error: workoutDateRowsError } = await admin
     .from("workouts")
     .select("data")
     .eq("user_id", userId)
     .eq("date", date);
-  if (dateRowsError) {
-    throw new Error(`Failed to verify date availability: ${dateRowsError.message}`);
+  if (workoutDateRowsError) {
+    throw new Error(`Failed to verify date availability: ${workoutDateRowsError.message}`);
   }
-  const isRestDay = ((dateRows ?? []) as Array<{ data?: unknown }>).some((row) => {
+  const isRestDay = ((workoutDateRows ?? []) as Array<{ data?: unknown }>).some((row) => {
     let payload = row.data;
     if (typeof payload === "string") {
       try {
@@ -708,15 +708,15 @@ export async function assignPresetDraftsToUserDate(
   }
   const prefillMap = new Map(prefilledByExercise.map((item) => [item.presetExerciseId, item.prefill]));
 
-  const { data: dateRows, error: dateRowsError } = await admin
+  const { data: workoutDateRows2, error: workoutDateRowsError2 } = await admin
     .from("workouts")
     .select("id,data")
     .eq("user_id", userId)
     .eq("date", date);
-  if (dateRowsError) {
-    throw new Error(`Failed to verify date availability: ${dateRowsError.message}`);
+  if (workoutDateRowsError2) {
+    throw new Error(`Failed to verify date availability: ${workoutDateRowsError2.message}`);
   }
-  const isRestDay = ((dateRows ?? []) as Array<{ data?: unknown }>).some((row) => {
+  const isRestDay2 = ((workoutDateRows2 ?? []) as Array<{ data?: unknown }>).some((row) => {
     let payload = row.data;
     if (typeof payload === "string") {
       try {
@@ -727,7 +727,7 @@ export async function assignPresetDraftsToUserDate(
     }
     return parseRestDayMarkerPayload(payload) !== null;
   });
-  if (isRestDay) {
+  if (isRestDay2) {
     throw new Error("That date is marked as a rest day. Clear rest day first.");
   }
 
