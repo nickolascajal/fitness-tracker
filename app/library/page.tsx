@@ -24,6 +24,10 @@ type ExerciseForm = {
 type PresetBuilderStep = 1 | 2;
 type PresetPanelMode = "list" | "create" | "edit";
 
+const USED_GUIDE_KEY = "hasSeenUsedExercisesGuide";
+const CREATED_GUIDE_KEY = "hasCompletedCreatedExercisesGuide";
+const PRESETS_GUIDE_KEY = "hasCompletedPresetsGuide";
+
 const initialForm: ExerciseForm = {
   name: "",
   targetReps: 8,
@@ -42,6 +46,44 @@ function allMasterNameSet(): Set<string> {
   return names;
 }
 
+function LibraryGuideCallout({
+  copy,
+  onSkip,
+  onGotIt
+}: {
+  copy: string;
+  onSkip: () => void;
+  onGotIt?: () => void;
+}) {
+  return (
+    <div className="relative rounded-lg border border-sky-300 bg-sky-50/95 p-3 text-left shadow-[0_10px_24px_-14px_rgba(2,132,199,0.65)]">
+      <span
+        aria-hidden
+        className="absolute -top-1.5 left-8 h-3 w-3 rotate-45 border-l border-t border-sky-300 bg-sky-50/95"
+      />
+      <p className="text-xs font-medium text-slate-800">{copy}</p>
+      <div className="mt-2 flex items-center gap-2">
+        {onGotIt ? (
+          <button
+            type="button"
+            onClick={onGotIt}
+            className="rounded-md border border-sky-400 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100"
+          >
+            Got it
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onSkip}
+          className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800"
+        >
+          Skip guide
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function LibraryPage() {
   const router = useRouter();
   const { exercises, presets, addExercise, addPreset, updatePreset, removePresets } = useExercises();
@@ -56,6 +98,7 @@ export default function LibraryPage() {
   const [presetPanelMode, setPresetPanelMode] = useState<PresetPanelMode>("list");
   const [presetName, setPresetName] = useState("");
   const [presetExerciseDraft, setPresetExerciseDraft] = useState<ExerciseForm>(initialForm);
+  const [presetExerciseSearchQuery, setPresetExerciseSearchQuery] = useState("");
   const [presetExercises, setPresetExercises] = useState<ExerciseForm[]>([]);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [editingPresetName, setEditingPresetName] = useState("");
@@ -76,6 +119,10 @@ export default function LibraryPage() {
   const [backupImportConfirmOpen, setBackupImportConfirmOpen] = useState(false);
   const [backupImportBusy, setBackupImportBusy] = useState(false);
   const [dataBackupOpen, setDataBackupOpen] = useState(false);
+  const [isLibraryGuideReady, setIsLibraryGuideReady] = useState(false);
+  const [hasSeenUsedExercisesGuide, setHasSeenUsedExercisesGuide] = useState(false);
+  const [hasCompletedCreatedExercisesGuide, setHasCompletedCreatedExercisesGuide] = useState(false);
+  const [hasCompletedPresetsGuide, setHasCompletedPresetsGuide] = useState(false);
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -97,11 +144,20 @@ export default function LibraryPage() {
     void guardRoute();
   }, [router]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setHasSeenUsedExercisesGuide(window.localStorage.getItem(USED_GUIDE_KEY) === "true");
+    setHasCompletedCreatedExercisesGuide(window.localStorage.getItem(CREATED_GUIDE_KEY) === "true");
+    setHasCompletedPresetsGuide(window.localStorage.getItem(PRESETS_GUIDE_KEY) === "true");
+    setIsLibraryGuideReady(true);
+  }, []);
+
   const resetPresetBuilder = () => {
     setPresetPanelMode("list");
     setPresetStep(1);
     setPresetName("");
     setPresetExerciseDraft(initialForm);
+    setPresetExerciseSearchQuery("");
     setPresetExercises([]);
     setEditingPresetId(null);
     setEditingPresetName("");
@@ -137,6 +193,45 @@ export default function LibraryPage() {
   };
 
   const masterNamesLower = useMemo(() => allMasterNameSet(), []);
+  const masterExerciseNames = useMemo(
+    () =>
+      Object.values(EXERCISES_BY_LETTER)
+        .flatMap((entries) => entries.map((entry) => entry.name))
+        .sort((a, b) => a.localeCompare(b)),
+    []
+  );
+  const filteredPresetMasterNames = useMemo(() => {
+    const query = presetExerciseSearchQuery.trim().toLowerCase();
+    if (!query) return masterExerciseNames.slice(0, 12);
+    return masterExerciseNames.filter((name) => name.toLowerCase().includes(query)).slice(0, 12);
+  }, [masterExerciseNames, presetExerciseSearchQuery]);
+
+  const completeUsedExercisesGuide = () => {
+    setHasSeenUsedExercisesGuide(true);
+    try {
+      window.localStorage.setItem(USED_GUIDE_KEY, "true");
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+
+  const completeCreatedExercisesGuide = () => {
+    setHasCompletedCreatedExercisesGuide(true);
+    try {
+      window.localStorage.setItem(CREATED_GUIDE_KEY, "true");
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+
+  const completePresetsGuide = () => {
+    setHasCompletedPresetsGuide(true);
+    try {
+      window.localStorage.setItem(PRESETS_GUIDE_KEY, "true");
+    } catch {
+      // ignore storage restrictions
+    }
+  };
 
   const usedExercises = useMemo(() => {
     const rows: {
@@ -190,6 +285,7 @@ export default function LibraryPage() {
     });
     setForm(initialForm);
     setShowCreateExercise(false);
+    completeCreatedExercisesGuide();
   };
 
   const handleAddPresetExercise = (event: FormEvent<HTMLFormElement>) => {
@@ -204,6 +300,7 @@ export default function LibraryPage() {
       }
     ]);
     setPresetExerciseDraft((previous) => ({ ...initialForm, unit: previous.unit }));
+    setPresetExerciseSearchQuery("");
   };
 
   const handleSavePreset = () => {
@@ -221,6 +318,7 @@ export default function LibraryPage() {
         trackRpe: exercise.trackRpe
       }))
     });
+    completePresetsGuide();
     resetPresetBuilder();
   };
 
@@ -409,6 +507,13 @@ export default function LibraryPage() {
       {tab === "used" ? (
         <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Used Exercises</h2>
+          {isLibraryGuideReady && !hasSeenUsedExercisesGuide ? (
+            <LibraryGuideCallout
+              copy="Used Exercises shows exercises you’ve already logged. Open one to review its history and progress."
+              onGotIt={completeUsedExercisesGuide}
+              onSkip={completeUsedExercisesGuide}
+            />
+          ) : null}
           {usedExercises.length === 0 ? (
             <p className="text-sm text-slate-600">No exercises used yet. Log a workout to populate this list.</p>
           ) : (
@@ -444,6 +549,12 @@ export default function LibraryPage() {
               Create New Exercise
             </button>
           </div>
+          {isLibraryGuideReady && !hasCompletedCreatedExercisesGuide ? (
+            <LibraryGuideCallout
+              copy="Created Exercises is where you can save custom exercise setups with your own sets, reps, increments, and tracking options."
+              onSkip={completeCreatedExercisesGuide}
+            />
+          ) : null}
           {createdExercises.length === 0 ? (
             <p className="text-sm text-slate-600">No manually created exercises yet.</p>
           ) : (
@@ -536,6 +647,12 @@ export default function LibraryPage() {
 
       {tab === "presets" ? (
         <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+          {isLibraryGuideReady && !hasCompletedPresetsGuide ? (
+            <LibraryGuideCallout
+              copy="Saved Workout Presets lets you build reusable workout templates so you can add multiple exercises to a day faster."
+              onSkip={completePresetsGuide}
+            />
+          ) : null}
           {presetPanelMode === "list" ? (
             <>
               <div className="flex flex-col gap-2 min-[400px]:flex-row min-[400px]:items-center min-[400px]:justify-between">
@@ -699,16 +816,61 @@ export default function LibraryPage() {
                 <div className="space-y-3">
                   <form onSubmit={handleAddPresetExercise} className="space-y-3">
                     <label className="block space-y-1">
-                      <span className="text-sm font-medium text-slate-700">Exercise name</span>
+                      <span className="text-sm font-medium text-slate-700">Find exercise</span>
                       <input
-                        value={presetExerciseDraft.name}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, name: e.target.value }))
-                        }
+                        value={presetExerciseSearchQuery}
+                        onChange={(e) => setPresetExerciseSearchQuery(e.target.value)}
                         className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        placeholder="e.g. Incline Bench Press"
+                        placeholder="Search master exercises..."
                       />
                     </label>
+                    <div className="rounded-md border border-slate-200 bg-white p-2">
+                      {filteredPresetMasterNames.length > 0 ? (
+                        <ul className="max-h-36 space-y-1 overflow-y-auto">
+                          {filteredPresetMasterNames.map((name) => (
+                            <li key={`preset-master-${name}`}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPresetExerciseDraft((prev) => ({ ...prev, name }));
+                                  setPresetExerciseSearchQuery(name);
+                                }}
+                                className={`w-full rounded px-2 py-1.5 text-left text-sm ${
+                                  presetExerciseDraft.name === name
+                                    ? "bg-slate-100 font-medium text-slate-900"
+                                    : "text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                {name}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-slate-600">No matching master exercise.</p>
+                      )}
+                      {presetExerciseSearchQuery.trim() &&
+                      !masterNamesLower.has(exerciseDuplicateKey(presetExerciseSearchQuery.trim())) ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPresetExerciseDraft((prev) => ({
+                              ...prev,
+                              name: presetExerciseSearchQuery.trim()
+                            }))
+                          }
+                          className="mt-2 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Use &quot;{presetExerciseSearchQuery.trim()}&quot; as a new exercise name
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      Selected exercise:{" "}
+                      <span className="font-medium text-slate-800">
+                        {presetExerciseDraft.name.trim() || "None selected yet"}
+                      </span>
+                    </p>
                     <div className="grid gap-2 sm:grid-cols-4">
                       <input
                         type="number"

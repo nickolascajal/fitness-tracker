@@ -73,7 +73,7 @@ The old standalone `Create Exercise` tab/page is removed from navigation; `/exer
 * **Workout day layout changes (`app/workout/page.tsx`):** day-list mode preserves the strict vertical order `This week` -> weekday selector -> `Workout day` text -> `Choose on calendar`, with compact `space-y-3` rhythm.
 * **Tab scrolling behavior (`app/library/page.tsx` + `app/globals.css`):** Library tabs are locked to a single row (`whitespace-nowrap`, `shrink-0`) inside `overflow-x-auto no-scrollbar` so labels never wrap to a second line.
 * **Input responsiveness improvements (`app/workout/page.tsx`):** both pre-submit and submitted-input tables keep one row per set, use compact mobile column tracks and non-wrapping compact headers, and fall back to local horizontal table scrolling on narrow widths when all optional columns are visible.
-* **Section layout refinements (`app/library/page.tsx` + `app/workout/page.tsx`):** Data Backup remains collapsible by default; preset list controls (including `Select`) are consolidated into the preset header action area; `Clear All Saved Data` remains in a lower, less dominant danger-zone area.
+* **Section layout refinements (`app/library/page.tsx` + `app/workout/page.tsx`):** Data Backup remains collapsible by default; preset list controls (including `Select`) are consolidated into the preset header action area; global clear-all is hidden from normal user UI.
 
 ### Mobile UI Refinement Pass v3
 
@@ -90,6 +90,12 @@ The old standalone `Create Exercise` tab/page is removed from navigation; `/exer
 * **Used Exercises** — exercises/configurations that have logged workout history
 * **Created Exercises** — only `isUserCreated === true` exercise definitions, with **Create New Exercise**
 * **Saved Workout Presets** — templates/splits, with **Create New Preset**; in list mode, **Select** / delete-mode actions live in the section header actions area (right side) and wrap cleanly only when needed on very narrow viewports.
+
+Library beta onboarding callouts (`app/library/page.tsx`, localStorage-backed):
+
+* **Used Exercises tab:** shows a contextual guide card with `Got it` / `Skip guide`; dismissal persisted as `hasSeenUsedExercisesGuide`.
+* **Created Exercises tab:** shows a contextual guide card with `Skip guide`; completion persisted as `hasCompletedCreatedExercisesGuide`, and it auto-completes when the user creates an exercise from this tab’s **Create New Exercise** flow.
+* **Saved Workout Presets tab:** shows a contextual guide card with `Skip guide`; completion persisted as `hasCompletedPresetsGuide`, and it auto-completes when a new preset is successfully saved.
 
 Manual creation duplicate rule:
 
@@ -266,13 +272,8 @@ Migration behavior:
 
 ### Reset System
 
-* On the **Log Workout** page (`/workout`), the **Clear All Saved Data** control is placed at the **bottom** of the page in a **subordinate “danger zone”** (border-top, smaller visual emphasis) so it does not compete with the main workout card; it remains a `<button type="button">` in **`app/workout/page.tsx`** and shares the same confirmation flow.
-* Browser `alert()`/`confirm()` are **not used** for this action. Clicking the button opens an **inline confirmation box** near the button with:
-  * prompt: `Are you sure you want to clear all saved data? This cannot be undone.`
-  * actions: **Cancel** and **Confirm Clear**
-* **Cancel** only closes the confirmation UI and does not modify state or storage.
-* **Confirm Clear** calls **`clearAllData()`**, then closes the confirmation UI.
-* **`clearAllData`** — only persistence + in-memory reset: `removeAllFitnessKeys()`, `clearExercises()`, `clearWorkoutHistory()`, then workout UI state (`selectedId`, `sets`, `submission`).
+* `clearAllData()` remains in `app/workout/page.tsx` for debug/maintenance workflows, but the **Clear All Saved Data** user-facing control is hidden from normal beta UI.
+* Clear-all behavior itself is unchanged when invoked: persistence + in-memory reset (`removeAllFitnessKeys()`, `clearExercises()`, `clearWorkoutHistory()`, and related workout UI state reset), plus the existing remote/pending-sync clear behavior documented below.
 
 ---
 
@@ -480,6 +481,10 @@ RIR/RPE behavior:
 - Presets are created from `Your Library` -> `Saved Workout Presets` via a two-step flow:
   - Step 1: enter preset name, then `Next`
   - Step 2: add one or more configured exercises, then `Save Preset`
+    - exercise add uses a searchable master-exercise picker with type-to-filter
+    - selecting a master exercise fills the preset exercise name for that row
+    - when no master exercise matches, typed text can be used as a new exercise name for that preset row
+    - per-row config fields stay explicit in the preset draft (`setCount`, `targetReps/time`, `increment`, `unit`, `trackRir`, `trackRpe`)
 - `Back to Library` exits the flow without saving partial draft data.
 - Nothing is persisted until `Save Preset` is clicked.
 - Saved presets in `Your Library` are clickable and open an edit screen.
@@ -799,7 +804,7 @@ Deployment notes:
     - while online, draft creation attempts remote insert (`Draft workout Supabase insert/update attempted`)
     - submitting an existing draft now syncs by `workoutId` using update-when-found / insert-when-missing to avoid duplicate remote rows
   - clear-all behavior:
-    - `Clear All Saved Data` now clears local/in-memory data for exercises, presets, workout history, `restByDate`, and `finishedByDate` immediately.
+    - `clearAllData()` clears local/in-memory data for exercises, presets, workout history, `restByDate`, and `finishedByDate` immediately.
     - clear-all now also triggers remote deletion for current user rows in `workouts`, `exercises`, and `presets`.
     - if remote clear fails (or app is offline), clear-all queues pending delete-all items instead of silently leaving remote data.
     - clear-all resets the pending sync queue before applying clear operations, so stale prior operations do not repopulate cleared state.

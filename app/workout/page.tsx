@@ -538,6 +538,7 @@ export default function WorkoutPage() {
   /** In day overview: `true` = day list + week; `false` = full calendar for two-step day selection. */
   const [isDayExercisesListOpen, setIsDayExercisesListOpen] = useState(true);
   const calendarFirstTapYmdRef = useRef<string | null>(null);
+  const clearAllDataDebugRef = useRef<() => void>(() => {});
   const [sets, setSets] = useState<SetLog[]>([]);
   const [submission, setSubmission] = useState<SubmissionSummary | null>(null);
   const [isWorkoutSubmitted, setIsWorkoutSubmitted] = useState(false);
@@ -556,7 +557,6 @@ export default function WorkoutPage() {
   const [configEditForm, setConfigEditForm] = useState<ExerciseSetupForm>(buildSetupDefaults);
   const [draftWorkoutId, setDraftWorkoutId] = useState<string | null>(null);
   const [submitValidationError, setSubmitValidationError] = useState<string | null>(null);
-  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   /** Day overview: multi-select to remove specific logged entries for the selected date only. */
   const [dayOverviewSelectMode, setDayOverviewSelectMode] = useState(false);
   const [dayOverviewSelectedWorkoutIds, setDayOverviewSelectedWorkoutIds] = useState<Set<string>>(
@@ -1455,19 +1455,21 @@ export default function WorkoutPage() {
     setExerciseSearchQuery("");
     setSetupForm(buildSetupDefaults());
   };
-
-  const handleClearAllData = () => {
-    setIsClearConfirmOpen(true);
-  };
-
-  const handleCancelClearAllData = () => {
-    setIsClearConfirmOpen(false);
-  };
-
-  const handleConfirmClearAllData = () => {
+  clearAllDataDebugRef.current = () => {
     void clearAllData();
-    setIsClearConfirmOpen(false);
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (process.env.NODE_ENV === "production") return;
+    const debugWindow = window as Window & {
+      __fitnessTrackerClearAllData?: () => void;
+    };
+    debugWindow.__fitnessTrackerClearAllData = () => clearAllDataDebugRef.current();
+    return () => {
+      delete debugWindow.__fitnessTrackerClearAllData;
+    };
+  }, []);
 
   const handleLogAnotherWorkout = () => {
     setSubmission(null);
@@ -3200,41 +3202,6 @@ export default function WorkoutPage() {
           </form>
         </div>
 
-      <div className="mt-1 border-t border-slate-200/90 pt-4 sm:pt-5">
-        <div className="mx-auto max-w-sm space-y-2 sm:ml-0 sm:max-w-md">
-          <p className="text-center text-xs text-slate-500 sm:text-left">Danger zone</p>
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <button
-              type="button"
-              onClick={handleClearAllData}
-              className="w-full rounded-md border border-rose-200/90 bg-slate-50/80 px-3 py-2 text-sm font-medium text-rose-800/95 hover:bg-rose-50/90 sm:w-auto"
-            >
-              Clear All Saved Data
-            </button>
-            {isClearConfirmOpen ? (
-              <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-900">
-                <p>Are you sure you want to clear all saved data? This cannot be undone.</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCancelClearAllData}
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmClearAllData}
-                    className="rounded-md bg-rose-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-800"
-                  >
-                    Confirm Clear
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
     </section>
   );
 }
