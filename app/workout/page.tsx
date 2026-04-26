@@ -68,7 +68,46 @@ type ExerciseSetupForm = {
   trackRpe: boolean;
 };
 
-const FIRST_WORKOUT_TOOLTIP_KEY = "fitness-tracker:onboarding-hasSeenFirstWorkoutTooltip";
+const FIRST_WORKOUT_GUIDE_COMPLETED_KEY = "hasCompletedFirstWorkoutGuide";
+const FIRST_WORKOUT_GUIDE_STEP_KEY = "firstWorkoutGuideStep";
+const FIRST_WORKOUT_GUIDE_MAX_STEP = 5;
+
+function clampFirstWorkoutGuideStep(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(FIRST_WORKOUT_GUIDE_MAX_STEP, Math.max(1, Math.floor(value)));
+}
+
+function FirstWorkoutGuideTooltip({
+  copy,
+  onGotIt,
+  onSkip
+}: {
+  copy: string;
+  onGotIt: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-3 text-left shadow-sm">
+      <p className="text-xs text-slate-700">{copy}</p>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onGotIt}
+          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Got it
+        </button>
+        <button
+          type="button"
+          onClick={onSkip}
+          className="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+        >
+          Skip guide
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function getLocalDateString(date: Date = new Date()): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -516,7 +555,9 @@ export default function WorkoutPage() {
   const [isRestDayToggleWarningVisible, setIsRestDayToggleWarningVisible] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [allowed, setAllowed] = useState(false);
-  const [showFirstWorkoutTooltip, setShowFirstWorkoutTooltip] = useState(false);
+  const [hasCompletedFirstWorkoutGuide, setHasCompletedFirstWorkoutGuide] = useState(true);
+  const [firstWorkoutGuideStep, setFirstWorkoutGuideStep] = useState(1);
+  const [isFirstWorkoutGuideReady, setIsFirstWorkoutGuideReady] = useState(false);
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -559,14 +600,62 @@ export default function WorkoutPage() {
   );
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     if (hasLoggedWorkoutHistory) {
-      setShowFirstWorkoutTooltip(false);
+      setHasCompletedFirstWorkoutGuide(true);
+      setFirstWorkoutGuideStep(FIRST_WORKOUT_GUIDE_MAX_STEP);
+      setIsFirstWorkoutGuideReady(true);
+      try {
+        window.localStorage.setItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY, "true");
+        window.localStorage.setItem(
+          FIRST_WORKOUT_GUIDE_STEP_KEY,
+          String(FIRST_WORKOUT_GUIDE_MAX_STEP)
+        );
+      } catch {
+        // ignore storage restrictions
+      }
       return;
     }
-    if (typeof window === "undefined") return;
-    const hasSeen = window.localStorage.getItem(FIRST_WORKOUT_TOOLTIP_KEY) === "true";
-    setShowFirstWorkoutTooltip(!hasSeen);
+
+    const completedRaw = window.localStorage.getItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY);
+    const stepRaw = Number(window.localStorage.getItem(FIRST_WORKOUT_GUIDE_STEP_KEY) ?? "1");
+    setHasCompletedFirstWorkoutGuide(completedRaw === "true");
+    setFirstWorkoutGuideStep(clampFirstWorkoutGuideStep(stepRaw));
+    setIsFirstWorkoutGuideReady(true);
   }, [hasLoggedWorkoutHistory]);
+
+  const isFirstWorkoutGuideActive =
+    isFirstWorkoutGuideReady && !hasCompletedFirstWorkoutGuide && !hasLoggedWorkoutHistory;
+
+  const completeFirstWorkoutGuide = () => {
+    setHasCompletedFirstWorkoutGuide(true);
+    setFirstWorkoutGuideStep(FIRST_WORKOUT_GUIDE_MAX_STEP);
+    try {
+      window.localStorage.setItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY, "true");
+      window.localStorage.setItem(
+        FIRST_WORKOUT_GUIDE_STEP_KEY,
+        String(FIRST_WORKOUT_GUIDE_MAX_STEP)
+      );
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+
+  const advanceFirstWorkoutGuide = () => {
+    if (firstWorkoutGuideStep >= FIRST_WORKOUT_GUIDE_MAX_STEP) {
+      completeFirstWorkoutGuide();
+      return;
+    }
+    const nextStep = clampFirstWorkoutGuideStep(firstWorkoutGuideStep + 1);
+    setFirstWorkoutGuideStep(nextStep);
+    try {
+      window.localStorage.setItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY, "false");
+      window.localStorage.setItem(FIRST_WORKOUT_GUIDE_STEP_KEY, String(nextStep));
+    } catch {
+      // ignore storage restrictions
+    }
+  };
 
   const lastSessionForSelected = useMemo((): WorkoutHistoryEntry | null => {
     if (!selectedExercise) return null;
@@ -1736,25 +1825,13 @@ export default function WorkoutPage() {
                             >
                               Log First Workout
                             </button>
-                            {showFirstWorkoutTooltip ? (
-                              <div className="absolute left-1/2 top-full z-10 mt-2 w-64 -translate-x-1/2 rounded-md border border-slate-200 bg-white p-3 text-left shadow-lg">
-                                <p className="text-xs text-slate-700">
-                                  Start here — log your first workout in under a minute.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setShowFirstWorkoutTooltip(false);
-                                    try {
-                                      window.localStorage.setItem(FIRST_WORKOUT_TOOLTIP_KEY, "true");
-                                    } catch {
-                                      // ignore storage restrictions and continue hiding for this session
-                                    }
-                                  }}
-                                  className="mt-2 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                                >
-                                  Got it
-                                </button>
+                            {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 1 ? (
+                              <div className="absolute left-1/2 top-full z-10 mt-2 w-72 -translate-x-1/2">
+                                <FirstWorkoutGuideTooltip
+                                  copy="Start here — log your first workout."
+                                  onGotIt={advanceFirstWorkoutGuide}
+                                  onSkip={completeFirstWorkoutGuide}
+                                />
                               </div>
                             ) : null}
                           </div>
@@ -1890,6 +1967,13 @@ export default function WorkoutPage() {
                       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         Exercise selection
                       </h2>
+                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 2 ? (
+                        <FirstWorkoutGuideTooltip
+                          copy="Choose the exercise you’re doing, or create one if you don’t see it."
+                          onGotIt={advanceFirstWorkoutGuide}
+                          onSkip={completeFirstWorkoutGuide}
+                        />
+                      ) : null}
                       {!hasLoggedWorkoutHistory &&
                       presets.length === 0 &&
                       userCreatedExercises.length === 0 ? (
@@ -2052,6 +2136,13 @@ export default function WorkoutPage() {
                       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         Exercise setup
                       </h2>
+                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 3 ? (
+                        <FirstWorkoutGuideTooltip
+                          copy="Adjust sets, target reps, and weight increment here. If you’re unsure, leave the defaults."
+                          onGotIt={advanceFirstWorkoutGuide}
+                          onSkip={completeFirstWorkoutGuide}
+                        />
+                      ) : null}
                       <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                         {isCustomExerciseSetup ? (
                           <label className="block space-y-1">
@@ -2344,6 +2435,13 @@ export default function WorkoutPage() {
                     <div className="space-y-5">
                       <h3 className="text-base font-semibold text-slate-900">{selectedExercise.name}</h3>
                       <p className="text-sm text-slate-600">Log your workout to receive a recommendation.</p>
+                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 4 ? (
+                        <FirstWorkoutGuideTooltip
+                          copy="Enter your weight and reps for each set, then press Submit Workout when you’re done."
+                          onGotIt={advanceFirstWorkoutGuide}
+                          onSkip={completeFirstWorkoutGuide}
+                        />
+                      ) : null}
                       {draftWorkoutId ? (
                         <p className="rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700">
                           Added from preset — enter your sets to log this workout.
@@ -2637,6 +2735,15 @@ export default function WorkoutPage() {
                     {postSubmitView === "dashboard" ? (
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">This session</h3>
+                      {isFirstWorkoutGuideActive && firstWorkoutGuideStep === 5 ? (
+                        <div className="mt-2">
+                          <FirstWorkoutGuideTooltip
+                            copy="This dashboard shows your performance numbers, recommendation, and comparison to last time."
+                            onGotIt={completeFirstWorkoutGuide}
+                            onSkip={completeFirstWorkoutGuide}
+                          />
+                        </div>
+                      ) : null}
                       <p className="mt-1 text-sm text-slate-600">
                         <span className="font-medium text-slate-800">{submission.exerciseName}</span>
                         <span className="text-slate-400"> · </span>

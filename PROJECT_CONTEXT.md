@@ -101,7 +101,15 @@ Manual creation duplicate rule:
 ### Workout Logging
 
 * **No library exercise is required** to open `/workout`: users can use the full flow with the **master exercise list** (and presets) even when `exercises` is empty; the old **“Create at least one exercise first…”** block is removed.
-* **First-time onboarding nudge (`app/workout/page.tsx`):** when a user has **zero logged workouts** and has **not dismissed** the first-workout hint, day overview shows a small tooltip on the **Log First Workout** button: `Start here — log your first workout in under a minute.` with a `Got it` action. Dismissal persists in localStorage key `fitness-tracker:onboarding-hasSeenFirstWorkoutTooltip`, and the tooltip never shows again after dismiss (or once workout history exists).
+* **First-workout guide (`app/workout/page.tsx`):** brand-new users (zero logged workouts) see a lightweight, contextual 5-step guide with subtle in-flow tooltips and no modal:
+  1. Day overview near **Log First Workout**: `Start here — log your first workout.`
+  2. Exercise selection: `Choose the exercise you’re doing, or create one if you don’t see it.`
+  3. Exercise setup/config: `Adjust sets, target reps, and weight increment here. If you’re unsure, leave the defaults.`
+  4. Workout input: `Enter your weight and reps for each set, then press Submit Workout when you’re done.`
+  5. Post-submit dashboard: `This dashboard shows your performance numbers, recommendation, and comparison to last time.`
+  - Each step has `Got it` and `Skip guide`.
+  - `Got it` advances stored step progression (`firstWorkoutGuideStep`) and surfaces the next step when the user naturally reaches that screen.
+  - `Skip guide` or dismissing step 5 marks completion (`hasCompletedFirstWorkoutGuide = true`), so the guide no longer appears.
 * **Exercise-selection first-time helper (`app/workout/page.tsx`):** in `Exercise selection`, users with **no logged workouts**, **no saved presets**, and **no created exercises** see helper text: `Your saved exercises and presets will appear here after your first workout.`
 * **Workout date (day list + week strip, `isDayExercisesListOpen` true):** the **week strip** renders **first**; the **workout / selected day** line and **Choose on calendar** sit **below** it for a less cramped mobile layout.
 * **Set input grid (pre-submit + post-submit edit):** column templates use **tighter `max-md` tracks**; parents use **`max-md:overflow-x-auto`** with a **minimum table width** so when **Weight, Reps, RIR, and RPE** (or time equivalents) are all shown, the row can **scroll horizontally** on narrow viewports instead of breaking. Header copy is **shortened** on small screens (e.g. `Wt (kg)`, `Reps (T 8)`, `Time (T 45s)`) while **preserving unit and target context**.
