@@ -68,6 +68,8 @@ type ExerciseSetupForm = {
   trackRpe: boolean;
 };
 
+const FIRST_WORKOUT_TOOLTIP_KEY = "fitness-tracker:onboarding-hasSeenFirstWorkoutTooltip";
+
 function getLocalDateString(date: Date = new Date()): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
@@ -514,6 +516,7 @@ export default function WorkoutPage() {
   const [isRestDayToggleWarningVisible, setIsRestDayToggleWarningVisible] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [allowed, setAllowed] = useState(false);
+  const [showFirstWorkoutTooltip, setShowFirstWorkoutTooltip] = useState(false);
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -542,11 +545,28 @@ export default function WorkoutPage() {
   };
 
   const selectedExercise = exercises.find((e) => e.id === selectedId);
+  const hasLoggedWorkoutHistory = useMemo(
+    () =>
+      Object.values(historyByExerciseId).some((entries) =>
+        entries.some((entry) => entry.isDraft !== true)
+      ),
+    [historyByExerciseId]
+  );
   const canSubmitCurrentWorkout = hasAtLeastOneValidSet(
     sets,
     selectedExercise?.type ?? "weight",
     selectedExercise?.foundation ?? 0
   );
+
+  useEffect(() => {
+    if (hasLoggedWorkoutHistory) {
+      setShowFirstWorkoutTooltip(false);
+      return;
+    }
+    if (typeof window === "undefined") return;
+    const hasSeen = window.localStorage.getItem(FIRST_WORKOUT_TOOLTIP_KEY) === "true";
+    setShowFirstWorkoutTooltip(!hasSeen);
+  }, [hasLoggedWorkoutHistory]);
 
   const lastSessionForSelected = useMemo((): WorkoutHistoryEntry | null => {
     if (!selectedExercise) return null;
@@ -1701,20 +1721,43 @@ export default function WorkoutPage() {
                       {workoutsForSelectedDate.length === 0 ? (
                         <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-center">
                           <p className="text-sm text-slate-600">No workouts logged for this date yet.</p>
-                          <button
-                            type="button"
-                            disabled={isAddWorkoutBlocked}
-                            onClick={() => {
-                              if (isAddWorkoutBlocked) return;
-                              setLogFlowPhase("exercise_select");
-                              setSelectedId("");
-                              setSets([]);
-                              setExerciseSearchQuery("");
-                            }}
-                            className="mt-3 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
-                          >
-                            Select first workout
-                          </button>
+                          <div className="relative mt-3 inline-flex">
+                            <button
+                              type="button"
+                              disabled={isAddWorkoutBlocked}
+                              onClick={() => {
+                                if (isAddWorkoutBlocked) return;
+                                setLogFlowPhase("exercise_select");
+                                setSelectedId("");
+                                setSets([]);
+                                setExerciseSearchQuery("");
+                              }}
+                              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              Log First Workout
+                            </button>
+                            {showFirstWorkoutTooltip ? (
+                              <div className="absolute left-1/2 top-full z-10 mt-2 w-64 -translate-x-1/2 rounded-md border border-slate-200 bg-white p-3 text-left shadow-lg">
+                                <p className="text-xs text-slate-700">
+                                  Start here — log your first workout in under a minute.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowFirstWorkoutTooltip(false);
+                                    try {
+                                      window.localStorage.setItem(FIRST_WORKOUT_TOOLTIP_KEY, "true");
+                                    } catch {
+                                      // ignore storage restrictions and continue hiding for this session
+                                    }
+                                  }}
+                                  className="mt-2 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                >
+                                  Got it
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       ) : (
                         <>
@@ -1847,6 +1890,13 @@ export default function WorkoutPage() {
                       <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         Exercise selection
                       </h2>
+                      {!hasLoggedWorkoutHistory &&
+                      presets.length === 0 &&
+                      userCreatedExercises.length === 0 ? (
+                        <p className="text-xs text-slate-500">
+                          Your saved exercises and presets will appear here after your first workout.
+                        </p>
+                      ) : null}
                       <div className="mt-1">
                         <label className="block text-sm font-medium text-slate-700" htmlFor="exercise-search">
                           Search exercises
