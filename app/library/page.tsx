@@ -96,6 +96,7 @@ export default function LibraryPage() {
     updatePreset,
     removePresets,
     archiveExercises,
+    restoreExercises,
     deleteExercisesPermanently
   } = useExercises();
   const { historyByExerciseId, removeWorkoutsByExerciseIds } = useWorkoutHistory();
@@ -109,6 +110,7 @@ export default function LibraryPage() {
   const [createdSelectedIds, setCreatedSelectedIds] = useState<Set<string>>(() => new Set());
   const [createdArchiveConfirmOpen, setCreatedArchiveConfirmOpen] = useState(false);
   const [createdMenuExerciseId, setCreatedMenuExerciseId] = useState<string | null>(null);
+  const [archivedExercisesOpen, setArchivedExercisesOpen] = useState(false);
   const [presetStep, setPresetStep] = useState<PresetBuilderStep>(1);
   const [presetPanelMode, setPresetPanelMode] = useState<PresetPanelMode>("list");
   const [presetName, setPresetName] = useState("");
@@ -307,6 +309,10 @@ export default function LibraryPage() {
     () => exercises.filter((e) => e.isUserCreated === true && e.isArchived !== true),
     [exercises]
   );
+  const archivedCreatedExercises = useMemo(
+    () => exercises.filter((e) => e.isUserCreated === true && e.isArchived === true),
+    [exercises]
+  );
 
   const handleCreateExercise = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -358,6 +364,11 @@ export default function LibraryPage() {
 
   const archiveSingleCreatedExercise = (exerciseId: string) => {
     archiveExercises([exerciseId]);
+    setCreatedMenuExerciseId(null);
+  };
+
+  const restoreSingleCreatedExercise = (exerciseId: string) => {
+    restoreExercises([exerciseId]);
     setCreatedMenuExerciseId(null);
   };
 
@@ -766,6 +777,81 @@ export default function LibraryPage() {
               </div>
             </div>
           ) : null}
+          <div className="rounded-md border border-slate-200 bg-slate-50/70">
+            <button
+              type="button"
+              onClick={() => setArchivedExercisesOpen((open) => !open)}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+              aria-expanded={archivedExercisesOpen}
+            >
+              <span className="text-sm font-medium text-slate-700">
+                Archived Exercises ({archivedCreatedExercises.length})
+              </span>
+              <span className="text-slate-500">{archivedExercisesOpen ? "−" : "+"}</span>
+            </button>
+            {archivedExercisesOpen ? (
+              <div className="border-t border-slate-200 px-3 py-2">
+                {archivedCreatedExercises.length === 0 ? (
+                  <p className="text-sm text-slate-500">No archived exercises.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {archivedCreatedExercises.map((exercise) => (
+                      <li
+                        key={`archived-${exercise.id}`}
+                        className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-slate-900">{exercise.name}</p>
+                            <p className="text-slate-600">
+                              {exercise.setCount} sets x {exercise.targetReps} reps · +{exercise.increment}{" "}
+                              {exercise.unit}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => restoreSingleCreatedExercise(exercise.id)}
+                            className={actionButtonClasses.secondarySm}
+                          >
+                            Restore
+                          </button>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setCreatedMenuExerciseId((previous) =>
+                                  previous === exercise.id ? null : exercise.id
+                                );
+                              }}
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                              aria-label={`More options for archived ${exercise.name}`}
+                            >
+                              ⋮
+                            </button>
+                            {createdMenuExerciseId === exercise.id ? (
+                              <div
+                                className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => deleteSingleCreatedExercisePermanently(exercise.id)}
+                                  className="w-full rounded px-2 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-50"
+                                >
+                                  Delete permanently
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+          </div>
           {showCreateExercise ? (
             <form onSubmit={handleCreateExercise} className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="block space-y-1">

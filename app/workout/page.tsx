@@ -1806,10 +1806,20 @@ export default function WorkoutPage() {
                           </div>
                         </div>
                       ) : null}
+                      {showStep1Tooltip ? (
+                        <FirstWorkoutGuideTooltip
+                          copy={
+                            hasLoggedWorkoutHistory
+                              ? "Quick walkthrough — here’s how your workouts are organized."
+                              : "Start here — log your first workout."
+                          }
+                          onSkip={completeFirstWorkoutGuide}
+                        />
+                      ) : null}
                       {workoutsForSelectedDate.length === 0 ? (
                         <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-center">
                           <p className="text-sm text-slate-600">No workouts logged for this date yet.</p>
-                          <div className="relative mt-3 inline-flex">
+                          <div className="mt-3 inline-flex">
                             <button
                               type="button"
                               disabled={isAddWorkoutBlocked}
@@ -1824,19 +1834,6 @@ export default function WorkoutPage() {
                             >
                               Log First Workout
                             </button>
-                            {showStep1Tooltip ? (
-                              <div className="absolute left-1/2 top-full z-10 mt-2 w-72 -translate-x-1/2">
-                                <FirstWorkoutGuideTooltip
-                                  copy={
-                                    hasLoggedWorkoutHistory
-                                      ? "Quick walkthrough — here’s how your workouts are organized."
-                                      : "Start here — log your first workout."
-                                  }
-                                  onSkip={completeFirstWorkoutGuide}
-                                  anchored
-                                />
-                              </div>
-                            ) : null}
                           </div>
                         </div>
                       ) : (

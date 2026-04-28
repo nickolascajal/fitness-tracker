@@ -75,6 +75,7 @@ type ExercisesContextValue = {
   updatePreset: (presetId: string, updater: (preset: WorkoutPreset) => WorkoutPreset) => void;
   removePresets: (presetIds: string[]) => void;
   archiveExercises: (exerciseIds: string[]) => void;
+  restoreExercises: (exerciseIds: string[]) => void;
   deleteExercisesPermanently: (exerciseIds: string[]) => void;
   clearPresets: () => void;
   clearExercises: () => void;
@@ -870,6 +871,28 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
     [syncExerciseUpdateToSupabase]
   );
 
+  const restoreExercises = useCallback(
+    (exerciseIds: string[]) => {
+      if (exerciseIds.length === 0) return;
+      const ids = new Set(exerciseIds);
+      const toSync: Exercise[] = [];
+      setExercises((previous) =>
+        previous.map((exercise) => {
+          if (!ids.has(exercise.id) || exercise.isUserCreated !== true || exercise.isArchived !== true) {
+            return exercise;
+          }
+          const next: Exercise = { ...exercise, isArchived: false };
+          toSync.push(next);
+          return next;
+        })
+      );
+      for (const exercise of toSync) {
+        void syncExerciseUpdateToSupabase(exercise);
+      }
+    },
+    [syncExerciseUpdateToSupabase]
+  );
+
   const deleteExercisesPermanently = useCallback(
     (exerciseIds: string[]) => {
       if (exerciseIds.length === 0) return;
@@ -1038,6 +1061,7 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         updatePreset,
         removePresets,
         archiveExercises,
+        restoreExercises,
         deleteExercisesPermanently,
         clearPresets,
         clearExercises

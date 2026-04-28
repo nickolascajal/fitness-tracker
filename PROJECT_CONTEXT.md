@@ -36,6 +36,7 @@ Core idea:
   * optional tracking toggles: `Track RIR`, `Track RPE`
 * Created Exercises lifecycle:
   * default cleanup path is **Archive** (hides custom exercises from active pickers/lists but keeps historical workout references intact)
+  * `Your Library` → `Created Exercises` includes a **collapsible Archived Exercises section** (with count) where archived rows can be restored or permanently deleted
   * advanced **Delete permanently** path removes the custom exercise config, removes matching preset exercise rows, and removes workout history entries tied to that `exerciseId` (user-scoped, irreversible)
 * Forms that configure exercises (workout exercise setup, day-overview edit configuration, library created exercises and presets, admin “Create Preset for User,” and admin planned/historical inputs where those metrics appear) use **explicit labels** plus small **`?` help popovers** (`components/help-tooltip.tsx`, shared copy `EXERCISE_CONFIG_HELP`) for fields such as sets, target reps/time, increment, unit, and RIR/RPE/TIR—without changing stored values or progression logic.
 * Manual exercise creation defaults (library + custom setup):
@@ -136,7 +137,8 @@ Manual creation duplicate rule:
   5. Post-submit dashboard: `This dashboard shows your performance numbers, recommendation, and comparison to last time.`
   - Steps 1–4 show only `Skip guide`; step 5 (dashboard) shows `Done` + `Skip guide`.
   - Guide text auto-follows the user’s current phase (no per-step confirmation clicks required), while `firstWorkoutGuideStep` is still persisted for diagnostics/state continuity.
-  - **`Skip guide`** or **`Done`** on step 5 sets `hasCompletedFirstWorkoutGuide = true` (persisted); existing workout history does **not** auto-complete the guide.
+  - **`Skip guide`** or **`Done`** on step 5 sets `hasCompletedFirstWorkoutGuide = true` (persisted); existing workout history does **not** auto-complete or auto-hide the guide.
+  - Logging a workout on the active selected date does not dismiss the guide; guide visibility remains dismissal-only across dates/phases.
 * **Exercise-selection first-time helper (`app/workout/page.tsx`):** in `Exercise selection`, users with **no logged workouts**, **no saved presets**, and **no created exercises** see helper text: `Your saved exercises and presets will appear here after your first workout.`
 * **Workout date (day list + week strip, `isDayExercisesListOpen` true):** the **week strip** renders **first**; the **workout / selected day** line and **Choose on calendar** sit **below** it for a less cramped mobile layout.
 * **Set input grid (pre-submit + post-submit edit):** column templates use **tighter `max-md` tracks**; parents use **`max-md:overflow-x-auto`** with a **minimum table width** so when **Weight, Reps, RIR, and RPE** (or time equivalents) are all shown, the row can **scroll horizontally** on narrow viewports instead of breaking. Header copy is **shortened** on small screens (e.g. `Wt (kg)`, `Reps (T 8)`, `Time (T 45s)`) while **preserving unit and target context**.
