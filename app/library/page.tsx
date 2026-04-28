@@ -8,6 +8,7 @@ import { EXERCISES_BY_LETTER } from "@/lib/exercises";
 import { exerciseDuplicateKey } from "@/lib/exerciseNameKey";
 import { createBackupSnapshot, restoreBackupSnapshot, validateBackupSnapshot } from "@/lib/storage";
 import { supabase } from "@/lib/supabaseClient";
+import { ActionButton, actionButtonClass, actionButtonClasses } from "@/components/action-button";
 
 type LibraryTab = "used" | "created" | "presets";
 
@@ -64,13 +65,9 @@ function LibraryGuideCallout({
       <p className="text-xs font-medium text-slate-800">{copy}</p>
       <div className="mt-2 flex items-center gap-2">
         {onGotIt ? (
-          <button
-            type="button"
-            onClick={onGotIt}
-            className="rounded-md border border-sky-400 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100"
-          >
+          <ActionButton type="button" variant="primarySm" onClick={onGotIt}>
             Got it
-          </button>
+          </ActionButton>
         ) : null}
         <button
           type="button"
@@ -544,7 +541,7 @@ export default function LibraryPage() {
                 setNameError(null);
                 setShowCreateExercise((v) => !v);
               }}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className={actionButtonClasses.primary}
             >
               Create New Exercise
             </button>
@@ -626,16 +623,13 @@ export default function LibraryPage() {
                 </select>
               </div>
               <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
+                <button type="submit" className={actionButtonClasses.primary}>
                   Save Exercise
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowCreateExercise(false)}
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className={actionButtonClasses.secondary}
                 >
                   Cancel
                 </button>
@@ -666,7 +660,10 @@ export default function LibraryPage() {
                       setPresetPanelMode("create");
                       setPresetStep(1);
                     }}
-                    className="w-full shrink-0 self-start rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 min-[400px]:w-auto hover:bg-slate-50"
+                    className={actionButtonClass(
+                      "primary",
+                      "w-full shrink-0 self-start min-[400px]:w-auto"
+                    )}
                   >
                     Create New Preset
                   </button>
@@ -678,7 +675,7 @@ export default function LibraryPage() {
                         setPresetListSelectedIds(new Set());
                         setPresetListDeleteConfirmOpen(false);
                       }}
-                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                      className={actionButtonClasses.secondary}
                     >
                       Select
                     </button>
@@ -693,14 +690,14 @@ export default function LibraryPage() {
                             setPresetListDeleteConfirmOpen(true);
                           }
                         }}
-                        className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-900 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className={actionButtonClasses.destructive}
                       >
                         Delete permanently
                       </button>
                       <button
                         type="button"
                         onClick={exitPresetListSelectionMode}
-                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        className={actionButtonClasses.secondary}
                       >
                         Cancel
                       </button>
@@ -715,14 +712,14 @@ export default function LibraryPage() {
                     <button
                       type="button"
                       onClick={handleConfirmDeleteSelectedPresets}
-                      className="rounded-md bg-rose-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-900"
+                      className={actionButtonClasses.destructiveSolid}
                     >
                       Yes, delete
                     </button>
                     <button
                       type="button"
                       onClick={() => setPresetListDeleteConfirmOpen(false)}
-                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      className={actionButtonClasses.secondary}
                     >
                       No, keep
                     </button>
@@ -781,11 +778,7 @@ export default function LibraryPage() {
                 <h3 className="text-sm font-semibold text-slate-900">
                   Create Preset {presetStep === 1 ? "Step 1 of 2" : "Step 2 of 2"}
                 </h3>
-                <button
-                  type="button"
-                  onClick={resetPresetBuilder}
-                  className="text-xs font-medium text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
-                >
+                <button type="button" onClick={resetPresetBuilder} className={actionButtonClasses.secondarySm}>
                   Back to Library
                 </button>
               </div>
@@ -806,7 +799,7 @@ export default function LibraryPage() {
                       type="button"
                       disabled={presetName.trim() === ""}
                       onClick={() => setPresetStep(2)}
-                      className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
                     >
                       Next
                     </button>
@@ -940,10 +933,7 @@ export default function LibraryPage() {
                       </label>
                     </div>
                     <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                      >
+                      <button type="submit" className={actionButtonClasses.secondary}>
                         Add Exercise
                       </button>
                     </div>
@@ -968,18 +958,14 @@ export default function LibraryPage() {
                   </div>
 
                   <div className="flex flex-wrap justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPresetStep(1)}
-                      className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                    >
+                    <button type="button" onClick={() => setPresetStep(1)} className={actionButtonClasses.secondary}>
                       Back
                     </button>
                     <button
                       type="button"
                       disabled={presetName.trim() === "" || presetExercises.length === 0}
                       onClick={handleSavePreset}
-                      className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
                     >
                       Save Preset
                     </button>
@@ -992,18 +978,14 @@ export default function LibraryPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-slate-900">Edit Preset</h3>
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={resetPresetBuilder}
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
+                  <button type="button" onClick={resetPresetBuilder} className={actionButtonClasses.secondary}>
                     Back
                   </button>
                   <button
                     type="button"
                     disabled={editingPresetName.trim() === "" || editingPresetExercises.length === 0}
                     onClick={handleSaveEditedPreset}
-                    className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
                   >
                     Save
                   </button>
@@ -1028,7 +1010,7 @@ export default function LibraryPage() {
                           setPresetExerciseDraft(initialForm);
                           setIsEditingPresetAddExerciseOpen((previous) => !previous);
                         }}
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className={actionButtonClasses.secondarySm}
                       >
                         Add Exercise
                       </button>
@@ -1038,7 +1020,7 @@ export default function LibraryPage() {
                           setPresetSelectionMode(true);
                           setPresetSelectedExerciseIndexes(new Set());
                         }}
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className={actionButtonClasses.secondarySm}
                       >
                         Select
                       </button>
@@ -1049,7 +1031,7 @@ export default function LibraryPage() {
                         type="button"
                         disabled={presetSelectedExerciseIndexes.size === 0}
                         onClick={removeSelectedPresetExercises}
-                        className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-medium text-rose-900 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className={actionButtonClasses.destructiveSm}
                       >
                         Delete selected
                       </button>
@@ -1059,7 +1041,7 @@ export default function LibraryPage() {
                           setPresetSelectionMode(false);
                           setPresetSelectedExerciseIndexes(new Set());
                         }}
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className={actionButtonClasses.secondarySm}
                       >
                         Cancel
                       </button>
@@ -1148,16 +1130,13 @@ export default function LibraryPage() {
                       </label>
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        type="submit"
-                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
+                      <button type="submit" className={actionButtonClasses.secondarySm}>
                         Add
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsEditingPresetAddExerciseOpen(false)}
-                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className={actionButtonClasses.secondarySm}
                       >
                         Cancel
                       </button>
@@ -1323,17 +1302,13 @@ export default function LibraryPage() {
             all local fitness data.
           </p>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleExportBackup}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
+            <button type="button" onClick={handleExportBackup} className={actionButtonClasses.secondary}>
               Export Data
             </button>
             <button
               type="button"
               onClick={() => backupImportInputRef.current?.click()}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className={actionButtonClasses.secondary}
             >
               Import Data
             </button>
@@ -1361,7 +1336,7 @@ export default function LibraryPage() {
                   type="button"
                   disabled={backupImportBusy}
                   onClick={handleConfirmImportBackup}
-                  className="rounded-md bg-rose-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-900 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={actionButtonClass("destructiveSolid", "disabled:cursor-not-allowed")}
                 >
                   Yes, import
                 </button>
@@ -1369,7 +1344,7 @@ export default function LibraryPage() {
                   type="button"
                   disabled={backupImportBusy}
                   onClick={() => setBackupImportConfirmOpen(false)}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={actionButtonClass("secondary", "disabled:cursor-not-allowed")}
                 >
                   No, keep current data
                 </button>

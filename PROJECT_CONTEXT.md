@@ -59,6 +59,23 @@ Navigation interaction polish:
 * **App shell (`app/layout.tsx` + `app/top-nav.tsx`):** root metadata title is **CS Fitness Tracker**. The app column uses **no top padding** on small screens (`pt-0`; desktop keeps `md:py-8`) so the **navbar is flush with the top of the viewport** (no white strip from outer padding). The **`<header>`** keeps the top **fully black** with a **softer, lighter-banded** vertical `linear-gradient` (mid-stops are slightly less heavy) so the transition into the page feels a bit **less visually weighty** than a harsh band; mobile uses **`pb-10`** with a **longer fade**; at **`md+`**, a compact black → light fade (`md:pb-4`, `via-zinc-900/85`) keeps desktop tidy. **All** branding and nav link text stays **white** (inactive `white/80`). The top-left title is **CS Fitness Tracker**.
 * **Home (`app/page.tsx`):** on small screens the hero is **centered** in a **taller min-height** region so it sits **nearer the middle** of the screen; the dark primary CTA is **Your Library** (links to `/library`); **Log a Workout** is unchanged. **Side-by-side** primary/secondary from ~`400px` width, **stack** on very narrow viewports. Desktop (`md+`) keeps **left-aligned** hero and default vertical rhythm without the mobile min-height centering.
 
+### Button action hierarchy
+
+Reusable styling lives in `components/action-button.tsx`:
+
+* **`ActionButton`** — renders `<button>` with a **`variant`** (`primary`, `secondary`, `destructive`, `destructiveSolid`, `info`, plus compact `primarySm` / `secondarySm` / `destructiveSm` when smaller controls are needed).
+* **`actionButtonClasses` / `actionButtonClass(variant, ...extra)`** — same class strings for cases that must stay a raw `<button>` (e.g. `type="submit"`, or composing with existing layout classes).
+
+**Primary** — `bg-black` / `border-black`, **white** label, strongest emphasis. Use for main forward/save actions, for example: Submit Workout, Save Preset, Create Exercise / Create New Exercise, Create New Preset, Save Changes, Assign Workout (admin), Log Another Workout, Log First Workout, profile **Save** / **Update Password**, and similar.
+
+**Secondary** — **white** field, **subtle border**, **dark** text. Use for dismissing, going back, or non-destructive alternatives, for example: Back to Day Overview, Back to exercise list, Cancel, Close Calendar, **Edit Workout** (editing session inputs is secondary to viewing the dashboard), Back to Library, Add another workout, admin **Clear rest day**, Log out, data backup Import/Export, and **Select** in list selection modes.
+
+**Destructive** — **red** outline or **red** solid. Outline variants for “Delete …” / **Delete selected**; solid for confirmed irreversible steps (e.g. **Yes, delete**, **Yes, import** for backup overwrite, admin **Clean up orphaned rows**). Replaces prior rose-only delete styling in these flows with the shared red scale.
+
+**Info** (optional / calendar-adjacent) — **subtle sky + slate**: light `sky-50` background, `sky-200` border, dark text. Use for **Choose on calendar**, month **← / →** in `WorkoutDateNavigation`, **Mark rest day** (admin) and the **Mark as rest day** checkbox row in day overview, and the **Wn / Review** cell in the month grid (aligned to the same family instead of indigo).
+
+**Not every control is a hierarchy button** — exercise pickers, week/month day cells, dashboard/inputs **segmented** toggles, and list rows keep their existing patterns; only **action** affordances use this system.
+
 The old standalone `Create Exercise` tab/page is removed from navigation; `/exercise` redirects to `/library`.
 
 ### Mobile UI Refinements v1

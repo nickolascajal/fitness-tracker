@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import type { WeekReviewSnapshot } from "@/lib/weeklyReview";
+import { actionButtonClasses } from "@/components/action-button";
 import { weekReviewBodyFromSnapshot } from "./weeklyReviewContent";
 
 type WeeklyReviewModalProps = {
@@ -76,11 +77,7 @@ export function WeeklyReviewModal({ isOpen, onBack, weekTitle, snapshot }: Weekl
           </li>
         </ul>
         <div className="mt-6 flex justify-end">
-          <button
-            type="button"
-            onClick={onBack}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
+          <button type="button" onClick={onBack} className={actionButtonClasses.secondary}>
             Back to calendar
           </button>
         </div>

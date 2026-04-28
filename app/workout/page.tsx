@@ -15,6 +15,7 @@ import { type WorkoutHistoryEntry, useWorkoutHistory } from "@/app/workout-histo
 import { WorkoutDateNavigation } from "@/app/workout/WorkoutDateNavigation";
 import { isYmdInWorkoutRange } from "@/app/workout/workoutDateNavUtils";
 import { supabase } from "@/lib/supabaseClient";
+import { ActionButton, actionButtonClass, actionButtonClasses } from "@/components/action-button";
 
 type SetLog = {
   weight: string;
@@ -101,13 +102,9 @@ function FirstWorkoutGuideTooltip({
       <p className="text-xs font-medium text-slate-800">{copy}</p>
       <div className="mt-2 flex items-center gap-2">
         {finalStep ? (
-          <button
-            type="button"
-            onClick={onDone}
-            className="rounded-md border border-sky-400 bg-white px-2.5 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100"
-          >
+          <ActionButton type="button" variant="primarySm" onClick={onDone}>
             Done
-          </button>
+          </ActionButton>
         ) : null}
         <button
           type="button"
@@ -1636,7 +1633,7 @@ export default function WorkoutPage() {
                             <button
                               type="button"
                               onClick={openCalendarForDatePicking}
-                              className="w-fit rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-100"
+                              className={actionButtonClass("info", "w-fit")}
                             >
                               Choose on calendar
                             </button>
@@ -1673,7 +1670,7 @@ export default function WorkoutPage() {
                             <button
                               type="button"
                               onClick={closeCalendarToDayList}
-                              className="w-fit rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-100"
+                              className={actionButtonClass("secondary", "w-fit")}
                             >
                               Close calendar
                             </button>
@@ -1701,7 +1698,7 @@ export default function WorkoutPage() {
                           <button
                             type="button"
                             onClick={goBackToDayOverview}
-                            className="w-fit text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                            className={actionButtonClass("secondary", "w-fit")}
                           >
                             Back to day overview
                           </button>
@@ -1718,7 +1715,7 @@ export default function WorkoutPage() {
                           : "border-slate-200 bg-slate-50/60"
                       }`}
                     >
-                      <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                      <label className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50/90 px-3 py-2 text-sm text-slate-800">
                         <input
                           type="checkbox"
                           className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
@@ -1780,7 +1777,7 @@ export default function WorkoutPage() {
                               setDayOverviewSelectedWorkoutIds(new Set());
                               setDayOverviewDeleteConfirmOpen(false);
                             }}
-                            className="w-fit rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                            className={actionButtonClass("secondary", "w-fit")}
                           >
                             Select
                           </button>
@@ -1794,14 +1791,14 @@ export default function WorkoutPage() {
                                   setDayOverviewDeleteConfirmOpen(true);
                                 }
                               }}
-                              className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-900 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              className={actionButtonClasses.destructive}
                             >
                               Delete permanently
                             </button>
                             <button
                               type="button"
                               onClick={exitDayOverviewSelectMode}
-                              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                              className={actionButtonClasses.secondary}
                             >
                               Cancel
                             </button>
@@ -1817,14 +1814,14 @@ export default function WorkoutPage() {
                             <button
                               type="button"
                               onClick={handleConfirmDeleteSelectedWorkouts}
-                              className="rounded-md bg-rose-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-900"
+                              className={actionButtonClasses.destructiveSolid}
                             >
                               Yes, delete
                             </button>
                             <button
                               type="button"
                               onClick={() => setDayOverviewDeleteConfirmOpen(false)}
-                              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                              className={actionButtonClasses.secondary}
                             >
                               No, keep
                             </button>
@@ -1845,7 +1842,7 @@ export default function WorkoutPage() {
                                 setSets([]);
                                 setExerciseSearchQuery("");
                               }}
-                              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
+                              className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
                             >
                               Log First Workout
                             </button>
@@ -1976,7 +1973,7 @@ export default function WorkoutPage() {
                                 setSets([]);
                                 setExerciseSearchQuery("");
                               }}
-                              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                              className={actionButtonClass("secondary", "disabled:cursor-not-allowed")}
                             >
                               Add another workout
                             </button>
@@ -2146,7 +2143,10 @@ export default function WorkoutPage() {
                           type="button"
                           disabled={isAddWorkoutBlocked}
                           onClick={startCreateNewExercise}
-                          className="mt-3 w-full rounded-md border border-dashed border-slate-300 bg-slate-50/80 py-2.5 text-sm font-medium text-slate-800 enabled:hover:border-slate-400 enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className={actionButtonClass(
+                            "primary",
+                            "mt-3 w-full disabled:cursor-not-allowed disabled:opacity-50"
+                          )}
                         >
                           Create new exercise
                         </button>
@@ -2301,7 +2301,7 @@ export default function WorkoutPage() {
                           <button
                             type="button"
                             onClick={handleConfirmExerciseSetup}
-                            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                            className={actionButtonClasses.primary}
                           >
                             OK
                           </button>
@@ -2316,7 +2316,7 @@ export default function WorkoutPage() {
                               setSets([]);
                               setLogFlowPhase("exercise_select");
                             }}
-                            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            className={actionButtonClasses.secondary}
                           >
                             Cancel
                           </button>
@@ -2443,14 +2443,14 @@ export default function WorkoutPage() {
                               setConfigEditForm(buildSetupDefaults());
                               setLogFlowPhase("day_overview");
                             }}
-                            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            className={actionButtonClasses.secondary}
                           >
                             Back
                           </button>
                           <button
                             type="button"
                             onClick={handleSubmitExerciseConfigEdit}
-                            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                            className={actionButtonClasses.primary}
                           >
                             Submit
                           </button>
@@ -2636,14 +2636,17 @@ export default function WorkoutPage() {
                         <button
                           type="button"
                           onClick={handleBackToExerciseSelector}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                          className={actionButtonClass("secondary")}
                         >
                           Back to exercise list
                         </button>
                         <button
                           type="submit"
                           disabled={!canSubmitCurrentWorkout}
-                          className="min-w-[10rem] rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
+                          className={actionButtonClass(
+                            "primary",
+                            "min-w-[10rem] py-2.5 disabled:cursor-not-allowed"
+                          )}
                         >
                           Submit workout
                         </button>
@@ -3063,14 +3066,14 @@ export default function WorkoutPage() {
                             <button
                               type="button"
                               onClick={handleSaveWorkoutChanges}
-                              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                              className={actionButtonClasses.primary}
                             >
                               Save Changes
                             </button>
                             <button
                               type="button"
                               onClick={handleCancelWorkoutChanges}
-                              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                              className={actionButtonClasses.secondary}
                             >
                               Cancel
                             </button>
@@ -3084,7 +3087,7 @@ export default function WorkoutPage() {
                                 setIsInputsEditable(true);
                                 setSubmitValidationError(null);
                               }}
-                              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                              className={actionButtonClasses.secondary}
                             >
                               Edit Workout
                             </button>
@@ -3182,14 +3185,14 @@ export default function WorkoutPage() {
                         <button
                           type="button"
                           onClick={handleBackToDayOverview}
-                          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                          className={actionButtonClasses.secondary}
                         >
                           Back to Day Overview
                         </button>
                         <button
                           type="button"
                           onClick={handleLogAnotherWorkout}
-                          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                          className={actionButtonClasses.primary}
                         >
                           Log Another Workout
                         </button>

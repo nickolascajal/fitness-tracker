@@ -12,6 +12,7 @@ import {
   setAdminUserRestDayAction
 } from "@/lib/admin/adminDataActions";
 import { supabase } from "@/lib/supabaseClient";
+import { actionButtonClass, actionButtonClasses } from "@/components/action-button";
 
 type WorkoutRow = {
   id: string;
@@ -445,7 +446,7 @@ export function AdminUserWorkoutsClient({
                 unit: prev.unit
               }));
             }}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className={actionButtonClasses.secondary}
           >
             Add exercise
           </button>
@@ -476,7 +477,7 @@ export function AdminUserWorkoutsClient({
                       onClick={() =>
                         setNewPresetExercises((prev) => prev.filter((_, i) => i !== index))
                       }
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      className={actionButtonClasses.destructiveSm}
                     >
                       Remove
                     </button>
@@ -537,7 +538,7 @@ export function AdminUserWorkoutsClient({
               await loadUserAdminData(adminAccessToken);
               setIsCreatingPreset(false);
             }}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
           >
             {isCreatingPreset ? "Creating..." : "Create preset for user"}
           </button>
@@ -581,7 +582,7 @@ export function AdminUserWorkoutsClient({
                 await loadUserAdminData(adminAccessToken);
                 setIsUpdatingRestDay(false);
               }}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={actionButtonClass("info", "disabled:cursor-not-allowed")}
             >
               Mark rest day
             </button>
@@ -604,7 +605,7 @@ export function AdminUserWorkoutsClient({
                 await loadUserAdminData(adminAccessToken);
                 setIsUpdatingRestDay(false);
               }}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 enabled:hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={actionButtonClass("secondary", "disabled:cursor-not-allowed")}
             >
               Clear rest day
             </button>
@@ -614,22 +615,22 @@ export function AdminUserWorkoutsClient({
           <button
             type="button"
             onClick={() => setAddWorkoutMode("planned")}
-            className={`rounded-md border px-3 py-2 text-sm font-medium ${
+            className={
               addWorkoutMode === "planned"
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-            }`}
+                ? actionButtonClasses.primary
+                : actionButtonClasses.secondary
+            }
           >
             Assign as planned workout
           </button>
           <button
             type="button"
             onClick={() => setAddWorkoutMode("historical")}
-            className={`rounded-md border px-3 py-2 text-sm font-medium ${
+            className={
               addWorkoutMode === "historical"
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-            }`}
+                ? actionButtonClasses.primary
+                : actionButtonClasses.secondary
+            }
           >
             Add as completed historical workout
           </button>
@@ -943,7 +944,7 @@ export function AdminUserWorkoutsClient({
               await loadUserAdminData(adminAccessToken);
               setIsSavingWorkout(false);
             }}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
           >
             {isAssigning || isSavingWorkout
               ? "Saving..."

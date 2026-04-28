@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cleanupAdminOrphanedRowsAction, fetchAdminOverviewAction } from "@/lib/admin/adminDataActions";
 import type { AdminOverview } from "@/lib/admin/queries";
 import { supabase } from "@/lib/supabaseClient";
+import { actionButtonClasses } from "@/components/action-button";
 
 type Phase = "loading" | "login" | "unauthorized" | "ready" | "fetch_error";
 
@@ -180,7 +181,7 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
                 await loadOverview(accessToken);
                 setIsCleaning(false);
               }}
-              className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 enabled:hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={actionButtonClasses.destructive}
             >
               {isCleaning ? "Cleaning..." : "Clean up orphaned rows"}
             </button>

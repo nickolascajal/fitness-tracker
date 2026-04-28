@@ -10,6 +10,7 @@ import {
   type WeekReviewSnapshot
 } from "@/lib/weeklyReview";
 import { WeeklyReviewModal } from "./WeeklyReviewModal";
+import { actionButtonClasses } from "@/components/action-button";
 import {
   getMonthGridCells,
   getWeekDaysSunToSat,
@@ -256,7 +257,7 @@ export function WorkoutDateNavigation({
               type="button"
               disabled={!allowInteraction || !canGoPrev}
               onClick={goPrevMonth}
-              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className={`${actionButtonClasses.info} disabled:cursor-not-allowed disabled:opacity-40`}
               aria-label="Previous month"
             >
               ←
@@ -268,7 +269,7 @@ export function WorkoutDateNavigation({
               type="button"
               disabled={!allowInteraction || !canGoNext}
               onClick={goNextMonth}
-              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className={`${actionButtonClasses.info} disabled:cursor-not-allowed disabled:opacity-40`}
               aria-label="Next month"
             >
               →
@@ -306,12 +307,12 @@ export function WorkoutDateNavigation({
                       <button
                         type="button"
                         onClick={openReview}
-                        className="flex min-h-[2.25rem] flex-col items-center justify-center rounded-md border-2 border-indigo-200/90 bg-indigo-50/90 px-0.5 text-center text-[0.65rem] font-semibold leading-tight text-indigo-900 shadow-sm hover:border-indigo-300 hover:bg-indigo-100/90 sm:text-xs"
+                        className="flex min-h-[2.25rem] flex-col items-center justify-center rounded-md border-2 border-sky-200/90 bg-sky-50/95 px-0.5 text-center text-[0.65rem] font-semibold leading-tight text-slate-800 shadow-sm hover:border-sky-300 hover:bg-sky-100/90 sm:text-xs"
                         title={`Weekly review for week ${wn}`}
                         aria-label={`Open weekly review for week ${wn} of ${getMonthName(viewMonth)}`}
                       >
-                        <span className="text-indigo-600/90">W{wn}</span>
-                        <span className="mt-0.5 text-[0.6rem] font-medium text-indigo-800/80">Review</span>
+                        <span className="text-slate-700">W{wn}</span>
+                        <span className="mt-0.5 text-[0.6rem] font-medium text-slate-600">Review</span>
                       </button>
                     ) : (
                       <div

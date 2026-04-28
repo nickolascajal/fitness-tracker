@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { actionButtonClasses } from "@/components/action-button";
 
 function shortUserId(userId: string): string {
   if (userId.length <= 12) return userId;
@@ -192,7 +193,7 @@ export default function ProfilePage() {
         <button
           type="button"
           onClick={handleSaveProfile}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className={actionButtonClasses.primary}
           disabled={profileSaving}
         >
           {profileSaving ? "Saving..." : "Save Profile"}
@@ -235,7 +236,7 @@ export default function ProfilePage() {
         <button
           type="button"
           onClick={handleChangePassword}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className={actionButtonClasses.primary}
           disabled={passwordSaving}
         >
           {passwordSaving ? "Updating..." : "Update Password"}
@@ -244,11 +245,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
+        <button type="button" onClick={handleSignOut} className={actionButtonClasses.secondary}>
           Log out
         </button>
       </div>
