@@ -143,11 +143,15 @@ Manual creation duplicate rule:
 * **Workout date (day list + week strip, `isDayExercisesListOpen` true):** the **week strip** renders **first**; the **workout / selected day** line and **Choose on calendar** sit **below** it for a less cramped mobile layout.
 * **Set input grid (pre-submit + post-submit edit):** column templates use **tighter `max-md` tracks**; parents use **`max-md:overflow-x-auto`** with a **minimum table width** so when **Weight, Reps, RIR, and RPE** (or time equivalents) are all shown, the row can **scroll horizontally** on narrow viewports instead of breaking. Header copy is **shortened** on small screens (e.g. `Wt (kg)`, `Reps (T 8)`, `Time (T 45s)`) while **preserving unit and target context**.
 * **Numeric workout inputs:** weight, reps, time (and optional RIR/TIR/RPE when shown) use **string state** so cleared fields stay **empty while typing** (no forced `0` on delete). **`Submit Workout`** / **`Save Changes`** stay disabled until **set 1** meets the existing exercise validity rules **and** every **later** visible row has **numeric** values in the required core fields (**including `0`**), with **no blanks**—this matches partial-completion logging (set 1 valid + trailing rows explicitly filled, even with zeros) without CPS/progression formula changes. Parsing for storage uses safe numeric conversion (no `NaN`). Shared rules live in `lib/workoutInputValidation.ts` (also used for admin **historical completed** assignment validation).
+* **Workout setup/config numeric inputs:** set count, target reps/time, and increment now allow temporary empty typing during edits, and setup/config confirmation actions remain disabled until required numeric fields are valid.
 * **Optional weekly bodyweight logging (`app/workout/page.tsx` + `app/bodyweight-provider.tsx` + `lib/bodyweight.ts`):**
   - Sunday-only lightweight prompt in day overview: users can log bodyweight or `Skip for now`; no blocking behavior.
+  - `Skip for now` is temporary for that week’s large prompt; users still get a smaller recoverable entry point and can log/update from Profile.
   - Stored per authenticated user via Supabase table `bodyweight_logs` when available, with local client-storage fallback (`loadClientBodyweightLogs` / `saveClientBodyweightLogs`) for offline/table-unavailable cases.
   - Log shape includes user-scoped week date (Sunday), bodyweight value, unit (`lbs`/`kg`), and timestamps.
   - Carry-forward is computed, not backfilled: effective bodyweight for any date uses the latest prior logged value (`getEffectiveBodyweightForDate`) without creating fake rows.
+  - UI distinguishes between `Logged this week` and `Using last logged bodyweight`.
+  - Latest bodyweight display on Profile is synced from the latest bodyweight log; Profile edits upsert the current week row (no duplicate week rows).
   - Helper utilities ready for future CPS/bodyweight analysis: `listBodyweightLogs`, `getLatestBodyweight`, `getEffectiveBodyweightForDate`.
 * Select exercise from workout flow
 * Input sets (weight + reps)
@@ -244,6 +248,7 @@ Simple progression insight:
 
 * Post-submit dashboard now includes compact long-term context for the selected exercise (completed sessions only; drafts excluded):
   * **CPS trend chart** (recent session dates vs CPS; dynamic y-scale with padding; compact/mobile-safe rendering).
+    - includes visible axis lines + subtle gridlines, uses stored workout session dates for labels (including historical/imported sessions), supports point hover/tap tooltip details, and highlights the currently selected/opened session point when it falls inside the shown range.
   * **Strength momentum** insight (`Trending Up` / `Stable` / `Dropping`) based on recent CPS vs prior baseline windows.
   * **Single-priority Coaching Insight** box with actionable suggestions for:
     1) repeated progression-stage stalls,

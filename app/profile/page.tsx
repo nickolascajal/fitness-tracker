@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useBodyweight } from "@/app/bodyweight-provider";
 import { actionButtonClasses } from "@/components/action-button";
+import { toSundayYmd, type BodyweightUnit } from "@/lib/bodyweight";
 
 function shortUserId(userId: string): string {
   if (userId.length <= 12) return userId;
@@ -24,6 +26,11 @@ export default function ProfilePage() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [bodyweightInput, setBodyweightInput] = useState("");
+  const [bodyweightUnit, setBodyweightUnit] = useState<BodyweightUnit>("lbs");
+  const [bodyweightMessage, setBodyweightMessage] = useState("");
+  const [bodyweightSaving, setBodyweightSaving] = useState(false);
+  const { getLatestBodyweight, listBodyweightLogs, upsertWeeklyBodyweight } = useBodyweight();
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -55,6 +62,18 @@ export default function ProfilePage() {
   }, [router]);
 
   const displayUserId = useMemo(() => shortUserId(userId), [userId]);
+  const latestBodyweight = useMemo(() => getLatestBodyweight(), [getLatestBodyweight]);
+  const profileWeekDate = useMemo(() => toSundayYmd(new Date()), []);
+  const profileWeekBodyweight = useMemo(
+    () => listBodyweightLogs().find((log) => log.weekDate === profileWeekDate) ?? null,
+    [listBodyweightLogs, profileWeekDate]
+  );
+
+  useEffect(() => {
+    if (!latestBodyweight) return;
+    setBodyweightUnit(latestBodyweight.unit);
+    setBodyweightInput(String(latestBodyweight.bodyweight));
+  }, [latestBodyweight]);
 
   const handleSaveProfile = async () => {
     const trimmedName = name.trim();
@@ -150,6 +169,19 @@ export default function ProfilePage() {
     router.push("/login");
   };
 
+  const handleSaveBodyweight = async () => {
+    const parsed = Number(bodyweightInput);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setBodyweightMessage("Enter a valid bodyweight.");
+      return;
+    }
+    setBodyweightSaving(true);
+    setBodyweightMessage("");
+    await upsertWeeklyBodyweight(profileWeekDate, parsed, bodyweightUnit);
+    setBodyweightSaving(false);
+    setBodyweightMessage("Bodyweight updated.");
+  };
+
   if (!authChecked || !userId) {
     return null;
   }
@@ -242,6 +274,54 @@ export default function ProfilePage() {
           {passwordSaving ? "Updating..." : "Update Password"}
         </button>
         {passwordMessage ? <p className="text-sm text-slate-600">{passwordMessage}</p> : null}
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Bodyweight</h2>
+        <p className="text-sm text-slate-700">
+          Latest bodyweight:{" "}
+          <span className="font-semibold text-slate-900">
+            {latestBodyweight ? `${latestBodyweight.bodyweight} ${latestBodyweight.unit}` : "—"}
+          </span>
+        </p>
+        <p className="text-xs text-slate-500">
+          {profileWeekBodyweight
+            ? `Logged this week: ${profileWeekBodyweight.bodyweight} ${profileWeekBodyweight.unit}`
+            : latestBodyweight
+              ? `Using last logged bodyweight: ${latestBodyweight.bodyweight} ${latestBodyweight.unit}`
+              : "No bodyweight logged yet."}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={bodyweightInput}
+            onChange={(event) => setBodyweightInput(event.target.value)}
+            placeholder="Bodyweight"
+            className="w-32 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+          <select
+            value={bodyweightUnit}
+            onChange={(event) => setBodyweightUnit(event.target.value as BodyweightUnit)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          >
+            <option value="lbs">lbs</option>
+            <option value="kg">kg</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              void handleSaveBodyweight();
+            }}
+            className={actionButtonClasses.primary}
+            disabled={bodyweightSaving}
+          >
+            {bodyweightSaving ? "Saving..." : "Update bodyweight"}
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">Optional and used for future performance context.</p>
+        {bodyweightMessage ? <p className="text-sm text-slate-600">{bodyweightMessage}</p> : null}
       </div>
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">

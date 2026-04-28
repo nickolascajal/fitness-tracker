@@ -74,9 +74,9 @@ type LogFlowPhase =
 type SetupExerciseType = "reps" | "time";
 type ExerciseSetupForm = {
   setupType: SetupExerciseType;
-  setCount: number;
-  targetReps: number;
-  increment: number;
+  setCount: string;
+  targetReps: string;
+  increment: string;
   unit: "lbs" | "kg";
   trackRir: boolean;
   trackRpe: boolean;
@@ -135,6 +135,12 @@ function FirstWorkoutGuideTooltip({
 function getLocalDateString(date: Date = new Date()): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
+}
+
+function toLocalDateStringFromIso(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "";
+  return getLocalDateString(date);
 }
 
 function formatWorkoutDate(dateString: string): string {
@@ -308,6 +314,7 @@ function cpsStatus(current: number | null, previous: number | null): string {
 type CpsSessionPoint = {
   workoutId: string;
   submittedAt: string;
+  workoutDate: string;
   sessionCps: number;
   sessionVolume: number;
   progressionStage: string;
@@ -333,6 +340,7 @@ function completedCpsSessions(entries: WorkoutHistoryEntry[]): CpsSessionPoint[]
       return {
         workoutId: entry.workoutId,
         submittedAt: entry.submittedAt,
+        workoutDate: entry.workoutDate ?? toLocalDateStringFromIso(entry.submittedAt),
         sessionCps: Number(entry.sessionCps),
         sessionVolume: Number.isFinite(entry.sessionVolume) ? entry.sessionVolume : 0,
         progressionStage: entry.progressionStage ?? "—",
@@ -364,6 +372,13 @@ function coachingInsight(
   const latestThree = sessions.slice(0, 3);
   const stage = latestThree[0]?.progressionStage ?? "—";
   if (stage !== "—" && latestThree.every((s) => s.progressionStage === stage)) {
+    const first = latestThree[0]!.sessionCps;
+    const last = latestThree[latestThree.length - 1]!.sessionCps;
+    const changePct = first > 0 ? ((first - last) / first) * 100 : 0;
+    if (Math.abs(changePct) > 2) {
+      // Avoid always showing stage stall when CPS is still moving.
+      return null;
+    }
     return {
       title: "Coaching Insight",
       body:
@@ -384,7 +399,7 @@ function coachingInsight(
       (current.topSetRepsAtMaxWeight ?? 0) < Math.max(1, targetReps - 1);
     if (heavierAttempt && repsNotStable) failedJumps += 1;
   }
-  if (failedJumps >= 2) {
+  if (failedJumps >= 1) {
     return {
       title: "Coaching Insight",
       body:
@@ -394,13 +409,13 @@ function coachingInsight(
   }
 
   // 3) CPS plateau
-  if (sessions.length >= 4) {
-    const recent = sessions.slice(0, 4).map((s) => s.sessionCps);
+  if (sessions.length >= 5) {
+    const recent = sessions.slice(0, 5).map((s) => s.sessionCps);
     const min = Math.min(...recent);
     const max = Math.max(...recent);
     const mean = recent.reduce((sum, n) => sum + n, 0) / recent.length;
     const spreadPercent = mean > 0 ? ((max - min) / mean) * 100 : 0;
-    if (spreadPercent <= 3) {
+    if (spreadPercent <= 2.5) {
       return {
         title: "Coaching Insight",
         body:
@@ -418,7 +433,7 @@ function coachingInsight(
     const priorAvgCps = prior.reduce((sum, s) => sum + s.sessionCps, 0) / prior.length;
     const recentAvgVol = recent.reduce((sum, s) => sum + s.sessionVolume, 0) / recent.length;
     const priorAvgVol = prior.reduce((sum, s) => sum + s.sessionVolume, 0) / prior.length;
-    if (recentAvgVol > priorAvgVol * 1.05 && recentAvgCps <= priorAvgCps * 1.01) {
+    if (recentAvgVol > priorAvgVol * 1.03 && recentAvgCps <= priorAvgCps * 1.005) {
       return {
         title: "Coaching Insight",
         body:
@@ -552,13 +567,27 @@ function setupTypeFromExerciseType(exerciseType: Exercise["type"]): SetupExercis
 function buildSetupDefaults(setupType: SetupExerciseType = "reps"): ExerciseSetupForm {
   return {
     setupType,
-    setCount: 3,
-    targetReps: setupType === "time" ? 60 : 8,
-    increment: 5,
+    setCount: "3",
+    targetReps: setupType === "time" ? "60" : "8",
+    increment: "5",
     unit: "lbs",
     trackRir: false,
     trackRpe: false
   };
+}
+
+function parseSetupPositiveInt(value: string): number | null {
+  if (value.trim() === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 1) return null;
+  return Math.floor(num);
+}
+
+function parseSetupNonNegativeNumber(value: string): number | null {
+  if (value.trim() === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return num;
 }
 
 /** Day overview primary line: exercise name + config (from saved exercise by id). Display only. */
@@ -689,6 +718,8 @@ export default function WorkoutPage() {
   const [weeklyBodyweightInput, setWeeklyBodyweightInput] = useState("");
   const [weeklyBodyweightUnit, setWeeklyBodyweightUnit] = useState<BodyweightUnit>("lbs");
   const [weeklyBodyweightDismissed, setWeeklyBodyweightDismissed] = useState(false);
+  const [weeklyBodyweightEditorOpen, setWeeklyBodyweightEditorOpen] = useState(false);
+  const [activeTrendPointWorkoutId, setActiveTrendPointWorkoutId] = useState<string | null>(null);
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -754,8 +785,22 @@ export default function WorkoutPage() {
   const shouldShowWeeklyBodyweightPrompt =
     logFlowPhase === "day_overview" &&
     isSundayYmd(selectedWorkoutDate) &&
+    (weeklyBodyweightEditorOpen || (currentWeekBodyweightLog === null && !weeklyBodyweightDismissed));
+  const shouldShowWeeklyBodyweightMiniEntry =
+    logFlowPhase === "day_overview" &&
+    isSundayYmd(selectedWorkoutDate) &&
     currentWeekBodyweightLog === null &&
-    !weeklyBodyweightDismissed;
+    weeklyBodyweightDismissed &&
+    !weeklyBodyweightEditorOpen;
+
+  const setupConfigValid =
+    parseSetupPositiveInt(setupForm.setCount) !== null &&
+    parseSetupPositiveInt(setupForm.targetReps) !== null &&
+    parseSetupNonNegativeNumber(setupForm.increment) !== null;
+  const configEditValid =
+    parseSetupPositiveInt(configEditForm.setCount) !== null &&
+    parseSetupPositiveInt(configEditForm.targetReps) !== null &&
+    parseSetupNonNegativeNumber(configEditForm.increment) !== null;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -776,6 +821,7 @@ export default function WorkoutPage() {
     if (typeof window === "undefined") return;
     if (!isSundayYmd(selectedWorkoutDate)) {
       setWeeklyBodyweightDismissed(false);
+      setWeeklyBodyweightEditorOpen(false);
       return;
     }
     const skipKey = `${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`;
@@ -790,6 +836,10 @@ export default function WorkoutPage() {
     }
     setWeeklyBodyweightInput("");
   }, [currentWeekBodyweightLog]);
+
+  useEffect(() => {
+    setActiveTrendPointWorkoutId(submission?.workoutId ?? null);
+  }, [submission?.workoutId]);
 
   const completeFirstWorkoutGuide = () => {
     setHasCompletedFirstWorkoutGuide(true);
@@ -822,20 +872,22 @@ export default function WorkoutPage() {
       .reverse()
       .map((entry) => ({
         workoutId: entry.workoutId,
-        dateLabel: new Date(entry.submittedAt).toLocaleDateString(undefined, {
-          month: "numeric",
-          day: "numeric"
-        }),
-        cps: entry.sessionCps
+        dateLabel: formatWorkoutDate(entry.workoutDate),
+        fullDateLabel: formatWorkoutDate(entry.workoutDate),
+        exerciseName: submission?.exerciseName ?? "",
+        submittedAt: entry.submittedAt,
+        cps: entry.sessionCps,
+        isSelectedSession: submission?.workoutId === entry.workoutId,
+        isActive: activeTrendPointWorkoutId === entry.workoutId
       }));
     return points;
-  }, [dashboardCompletedCpsSessions]);
+  }, [activeTrendPointWorkoutId, dashboardCompletedCpsSessions, submission?.exerciseName, submission?.workoutId]);
 
   const cpsTrendChart = useMemo(() => {
     if (cpsTrendPoints.length < 3) return null;
     const width = 320;
     const height = 120;
-    const padLeft = 8;
+    const padLeft = 24;
     const padRight = 8;
     const padTop = 8;
     const padBottom = 22;
@@ -851,13 +903,13 @@ export default function WorkoutPage() {
     const pointStep = cpsTrendPoints.length > 1 ? usableW / (cpsTrendPoints.length - 1) : usableW;
     const toY = (v: number) => padTop + ((maxY - v) / (maxY - minY || 1)) * usableH;
     const coords = cpsTrendPoints.map((p, i) => ({
+      ...p,
       x: padLeft + i * pointStep,
-      y: toY(p.cps),
-      label: p.dateLabel,
-      cps: p.cps
+      y: toY(p.cps)
     }));
     const polyline = coords.map((c) => `${c.x},${c.y}`).join(" ");
-    return { width, height, coords, polyline, min, max };
+    const gridYValues = [0, 0.5, 1].map((ratio) => padTop + usableH * ratio);
+    return { width, height, coords, polyline, min, max, padLeft, padRight, padTop, padBottom, gridYValues };
   }, [cpsTrendPoints]);
 
   const momentumMessage = useMemo(
@@ -1006,9 +1058,9 @@ export default function WorkoutPage() {
     setConfigEditTargetWorkoutId(entry.workoutId);
     setConfigEditExerciseName(entry.exerciseName);
     setConfigEditForm({
-      setCount: exerciseMeta?.setCount ?? defaultSetCount,
-      targetReps: exerciseMeta?.targetReps ?? 8,
-      increment: exerciseMeta?.increment ?? 5,
+      setCount: String(exerciseMeta?.setCount ?? defaultSetCount),
+      targetReps: String(exerciseMeta?.targetReps ?? 8),
+      increment: String(exerciseMeta?.increment ?? 5),
       setupType: exerciseMeta ? setupTypeFromExerciseType(exerciseMeta.type) : "reps",
       unit: exerciseMeta?.unit ?? "lbs",
       trackRir:
@@ -1114,10 +1166,14 @@ export default function WorkoutPage() {
       return;
     }
     setSetupNameError(null);
+    const setCount = parseSetupPositiveInt(setupForm.setCount);
+    const targetReps = parseSetupPositiveInt(setupForm.targetReps);
+    const increment = parseSetupNonNegativeNumber(setupForm.increment);
+    if (setCount === null || targetReps === null || increment === null) return;
     const config = {
-      setCount: setupForm.setCount,
-      targetReps: setupForm.targetReps,
-      increment: setupForm.increment,
+      setCount,
+      targetReps,
+      increment,
       unit: setupForm.unit,
       trackRir: setupForm.trackRir,
       trackRpe: setupForm.trackRpe
@@ -1167,10 +1223,14 @@ export default function WorkoutPage() {
     if (!configEditTargetWorkoutId) return;
     const trimmedName = configEditExerciseName.trim();
     if (!trimmedName) return;
+    const setCount = parseSetupPositiveInt(configEditForm.setCount);
+    const targetReps = parseSetupPositiveInt(configEditForm.targetReps);
+    const increment = parseSetupNonNegativeNumber(configEditForm.increment);
+    if (setCount === null || targetReps === null || increment === null) return;
     const config = {
-      setCount: configEditForm.setCount,
-      targetReps: configEditForm.targetReps,
-      increment: configEditForm.increment,
+      setCount,
+      targetReps,
+      increment,
       unit: configEditForm.unit,
       trackRir: configEditForm.trackRir,
       trackRpe: configEditForm.trackRpe
@@ -1794,9 +1854,21 @@ export default function WorkoutPage() {
 
   const handleSkipWeeklyBodyweight = () => {
     setWeeklyBodyweightDismissed(true);
+    setWeeklyBodyweightEditorOpen(false);
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(`${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`, "true");
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+
+  const handleReopenWeeklyBodyweightPrompt = () => {
+    setWeeklyBodyweightDismissed(false);
+    setWeeklyBodyweightEditorOpen(true);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(`${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`);
     } catch {
       // ignore storage restrictions
     }
@@ -1807,6 +1879,7 @@ export default function WorkoutPage() {
     if (!Number.isFinite(parsed) || parsed <= 0 || !selectedDateSunday) return;
     await upsertWeeklyBodyweight(selectedDateSunday, parsed, weeklyBodyweightUnit);
     setWeeklyBodyweightDismissed(true);
+    setWeeklyBodyweightEditorOpen(false);
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(`${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`, "true");
@@ -2050,9 +2123,47 @@ export default function WorkoutPage() {
                           </div>
                         </div>
                       ) : null}
+                      {shouldShowWeeklyBodyweightMiniEntry ? (
+                        <div className="rounded-md border border-slate-200 bg-slate-100/80 px-3 py-2 text-xs text-slate-600">
+                          <p>
+                            Skipped for now — you can still log this week&apos;s bodyweight from Profile.
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleReopenWeeklyBodyweightPrompt}
+                              className={actionButtonClasses.secondarySm}
+                            >
+                              Log bodyweight
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {currentWeekBodyweightLog ? (
+                        <div className="rounded-md border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-900">
+                          <p>
+                            Logged this week:{" "}
+                            <span className="font-semibold">
+                              {formatOneDecimal(currentWeekBodyweightLog.bodyweight)}{" "}
+                              {currentWeekBodyweightLog.unit}
+                            </span>
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleReopenWeeklyBodyweightPrompt}
+                              className={actionButtonClasses.secondarySm}
+                            >
+                              Update bodyweight
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                       {effectiveBodyweightForSelectedDate ? (
                         <p className="text-xs text-slate-500">
-                          Effective bodyweight for this date:{" "}
+                          {currentWeekBodyweightLog
+                            ? "Effective bodyweight for this date:"
+                            : "Using last logged bodyweight:"}{" "}
                           <span className="font-medium text-slate-700">
                             {formatOneDecimal(effectiveBodyweightForSelectedDate.bodyweight)}{" "}
                             {effectiveBodyweightForSelectedDate.unit}
@@ -2518,7 +2629,7 @@ export default function WorkoutPage() {
                                     ...prev,
                                     setupType: nextSetupType,
                                     trackRir: false,
-                                    targetReps: nextSetupType === "time" ? 60 : 8
+                                    targetReps: nextSetupType === "time" ? "60" : "8"
                                   };
                                 })
                               }
@@ -2542,7 +2653,7 @@ export default function WorkoutPage() {
                               min={1}
                               value={setupForm.setCount}
                               onChange={(event) =>
-                                setSetupForm((prev) => ({ ...prev, setCount: Number(event.target.value) }))
+                                setSetupForm((prev) => ({ ...prev, setCount: event.target.value }))
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
@@ -2563,7 +2674,7 @@ export default function WorkoutPage() {
                               min={1}
                               value={setupForm.targetReps}
                               onChange={(event) =>
-                                setSetupForm((prev) => ({ ...prev, targetReps: Number(event.target.value) }))
+                                setSetupForm((prev) => ({ ...prev, targetReps: event.target.value }))
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
@@ -2581,7 +2692,7 @@ export default function WorkoutPage() {
                               step={0.5}
                               value={setupForm.increment}
                               onChange={(event) =>
-                                setSetupForm((prev) => ({ ...prev, increment: Number(event.target.value) }))
+                                setSetupForm((prev) => ({ ...prev, increment: event.target.value }))
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
@@ -2600,7 +2711,11 @@ export default function WorkoutPage() {
                                 setSetupForm((prev) => ({
                                   ...prev,
                                   unit: nextUnit,
-                                  increment: defaultIncrementForUnit(nextUnit)
+                                  increment:
+                                    prev.increment.trim() === "" ||
+                                    Number(prev.increment) === defaultIncrementForUnit(prev.unit)
+                                      ? String(defaultIncrementForUnit(nextUnit))
+                                      : prev.increment
                                 }));
                               }}
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
@@ -2635,8 +2750,9 @@ export default function WorkoutPage() {
                         <div className="mt-3 flex gap-2">
                           <button
                             type="button"
+                            disabled={!setupConfigValid}
                             onClick={handleConfirmExerciseSetup}
-                            className={actionButtonClasses.primary}
+                            className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
                           >
                             OK
                           </button>
@@ -2688,7 +2804,7 @@ export default function WorkoutPage() {
                               onChange={(event) =>
                                 setConfigEditForm((prev) => ({
                                   ...prev,
-                                  setCount: Number(event.target.value)
+                                  setCount: event.target.value
                                 }))
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
@@ -2714,7 +2830,7 @@ export default function WorkoutPage() {
                               onChange={(event) =>
                                 setConfigEditForm((prev) => ({
                                   ...prev,
-                                  targetReps: Number(event.target.value)
+                                  targetReps: event.target.value
                                 }))
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
@@ -2735,7 +2851,7 @@ export default function WorkoutPage() {
                               onChange={(event) =>
                                 setConfigEditForm((prev) => ({
                                   ...prev,
-                                  increment: Number(event.target.value)
+                                  increment: event.target.value
                                 }))
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
@@ -2755,7 +2871,11 @@ export default function WorkoutPage() {
                                 setConfigEditForm((prev) => ({
                                   ...prev,
                                   unit: nextUnit,
-                                  increment: defaultIncrementForUnit(nextUnit)
+                                  increment:
+                                    prev.increment.trim() === "" ||
+                                    Number(prev.increment) === defaultIncrementForUnit(prev.unit)
+                                      ? String(defaultIncrementForUnit(nextUnit))
+                                      : prev.increment
                                 }));
                               }}
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
@@ -2811,7 +2931,8 @@ export default function WorkoutPage() {
                           <button
                             type="button"
                             onClick={handleSubmitExerciseConfigEdit}
-                            className={actionButtonClasses.primary}
+                            disabled={!configEditValid}
+                            className={actionButtonClass("primary", "disabled:cursor-not-allowed")}
                           >
                             Submit
                           </button>
@@ -3190,49 +3311,112 @@ export default function WorkoutPage() {
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             CPS trend
                           </p>
-                          <svg
-                            viewBox={`0 0 ${cpsTrendChart.width} ${cpsTrendChart.height}`}
-                            className="mt-2 h-28 w-full"
-                            role="img"
-                            aria-label="Recent CPS trend chart"
-                          >
-                            <polyline
-                              fill="none"
-                              stroke="rgb(15 23 42)"
-                              strokeWidth="2"
-                              points={cpsTrendChart.polyline}
-                            />
-                            {cpsTrendChart.coords.map((point) => (
-                              <circle
-                                key={`trend-point-${point.x}-${point.y}`}
-                                cx={point.x}
-                                cy={point.y}
-                                r="2.5"
-                                fill="rgb(15 23 42)"
+                          <div className="relative mt-2">
+                            <svg
+                              viewBox={`0 0 ${cpsTrendChart.width} ${cpsTrendChart.height}`}
+                              className="h-28 w-full"
+                              role="img"
+                              aria-label="Recent CPS trend chart"
+                            >
+                              {cpsTrendChart.gridYValues.map((y) => (
+                                <line
+                                  key={`grid-${y}`}
+                                  x1={cpsTrendChart.padLeft}
+                                  y1={y}
+                                  x2={cpsTrendChart.width - cpsTrendChart.padRight}
+                                  y2={y}
+                                  stroke="rgb(148 163 184 / 0.35)"
+                                  strokeWidth="1"
+                                />
+                              ))}
+                              <line
+                                x1={cpsTrendChart.padLeft}
+                                y1={cpsTrendChart.padTop}
+                                x2={cpsTrendChart.padLeft}
+                                y2={cpsTrendChart.height - cpsTrendChart.padBottom}
+                                stroke="rgb(100 116 139 / 0.6)"
+                                strokeWidth="1"
                               />
-                            ))}
-                            <text x="6" y="12" className="fill-slate-500 text-[9px]">
-                              {formatCps(cpsTrendChart.max)}
-                            </text>
-                            <text x="6" y={cpsTrendChart.height - 12} className="fill-slate-500 text-[9px]">
-                              {formatCps(cpsTrendChart.min)}
-                            </text>
-                            {cpsTrendChart.coords.map((point, index) => {
-                              const last = cpsTrendChart.coords.length - 1;
-                              if (!(index === 0 || index === last || index === Math.floor(last / 2))) return null;
-                              return (
-                                <text
-                                  key={`trend-label-${point.x}-${point.label}`}
-                                  x={point.x}
-                                  y={cpsTrendChart.height - 3}
-                                  textAnchor="middle"
-                                  className="fill-slate-500 text-[9px]"
-                                >
-                                  {point.label}
-                                </text>
-                              );
-                            })}
-                          </svg>
+                              <line
+                                x1={cpsTrendChart.padLeft}
+                                y1={cpsTrendChart.height - cpsTrendChart.padBottom}
+                                x2={cpsTrendChart.width - cpsTrendChart.padRight}
+                                y2={cpsTrendChart.height - cpsTrendChart.padBottom}
+                                stroke="rgb(100 116 139 / 0.6)"
+                                strokeWidth="1"
+                              />
+                              <polyline
+                                fill="none"
+                                stroke="rgb(15 23 42)"
+                                strokeWidth="2"
+                                points={cpsTrendChart.polyline}
+                              />
+                              {cpsTrendChart.coords.map((point) => (
+                                <g key={`trend-point-${point.workoutId}`}>
+                                  <circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={point.isSelectedSession ? 4.5 : point.isActive ? 4 : 3}
+                                    fill={
+                                      point.isSelectedSession
+                                        ? "rgb(2 132 199)"
+                                        : point.isActive
+                                          ? "rgb(15 23 42)"
+                                          : "rgb(51 65 85)"
+                                    }
+                                    className="cursor-pointer"
+                                    onMouseEnter={() => setActiveTrendPointWorkoutId(point.workoutId)}
+                                    onMouseLeave={() => setActiveTrendPointWorkoutId(null)}
+                                    onClick={() =>
+                                      setActiveTrendPointWorkoutId((prev) =>
+                                        prev === point.workoutId ? null : point.workoutId
+                                      )
+                                    }
+                                  />
+                                </g>
+                              ))}
+                              <text x="4" y={cpsTrendChart.padTop + 4} className="fill-slate-500 text-[9px]">
+                                {formatCps(cpsTrendChart.max)}
+                              </text>
+                              <text
+                                x="4"
+                                y={cpsTrendChart.height - cpsTrendChart.padBottom}
+                                className="fill-slate-500 text-[9px]"
+                              >
+                                {formatCps(cpsTrendChart.min)}
+                              </text>
+                              {cpsTrendChart.coords.map((point, index) => {
+                                const last = cpsTrendChart.coords.length - 1;
+                                if (!(index === 0 || index === last || index === Math.floor(last / 2))) return null;
+                                return (
+                                  <text
+                                    key={`trend-label-${point.workoutId}`}
+                                    x={point.x}
+                                    y={cpsTrendChart.height - 3}
+                                    textAnchor="middle"
+                                    className="fill-slate-500 text-[9px]"
+                                  >
+                                    {point.dateLabel}
+                                  </text>
+                                );
+                              })}
+                            </svg>
+                            {activeTrendPointWorkoutId
+                              ? (() => {
+                                  const point = cpsTrendChart.coords.find(
+                                    (p) => p.workoutId === activeTrendPointWorkoutId
+                                  );
+                                  if (!point) return null;
+                                  return (
+                                    <div className="pointer-events-none absolute right-2 top-1 rounded-md border border-slate-200 bg-white/95 px-2 py-1 text-xs text-slate-700 shadow">
+                                      <div>{point.fullDateLabel}</div>
+                                      <div>CPS: {formatCps(point.cps)}</div>
+                                      {point.exerciseName ? <div>{point.exerciseName}</div> : null}
+                                    </div>
+                                  );
+                                })()
+                              : null}
+                          </div>
                         </div>
                       ) : null}
 
