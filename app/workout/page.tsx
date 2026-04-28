@@ -302,26 +302,171 @@ function cpsStatus(current: number | null, previous: number | null): string {
   return volumeStatus(current, previous);
 }
 
-function progressionInsight(recentSessions: WorkoutHistoryEntry[]): string | null {
-  if (recentSessions.length < 3) return null;
-  const latestThree = recentSessions.slice(0, 3);
-  const [first] = latestThree;
-  if (!first || !first.progressionStage || first.progressionStage === "—") return null;
+type CpsSessionPoint = {
+  workoutId: string;
+  submittedAt: string;
+  sessionCps: number;
+  sessionVolume: number;
+  progressionStage: string;
+  maxWeight: number;
+  topSetRepsAtMaxWeight: number | null;
+};
 
-  const sameStageThreeSessions = latestThree.every(
-    (entry) => entry.progressionStage === first.progressionStage
-  );
-  if (!sameStageThreeSessions) return null;
+function completedCpsSessions(entries: WorkoutHistoryEntry[]): CpsSessionPoint[] {
+  return entries
+    .filter((entry) => entry.isDraft !== true && entry.sessionCps !== null && Number.isFinite(entry.sessionCps))
+    .map((entry) => {
+      let maxWeight = 0;
+      let topSetRepsAtMaxWeight: number | null = null;
+      for (const set of entry.sets) {
+        const weight = Number(set.weight);
+        const reps = Number(set.reps);
+        if (!Number.isFinite(weight) || weight < 0) continue;
+        if (weight > maxWeight) {
+          maxWeight = weight;
+          topSetRepsAtMaxWeight = Number.isFinite(reps) && reps >= 0 ? reps : null;
+        }
+      }
+      return {
+        workoutId: entry.workoutId,
+        submittedAt: entry.submittedAt,
+        sessionCps: Number(entry.sessionCps),
+        sessionVolume: Number.isFinite(entry.sessionVolume) ? entry.sessionVolume : 0,
+        progressionStage: entry.progressionStage ?? "—",
+        maxWeight,
+        topSetRepsAtMaxWeight
+      };
+    })
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+}
 
-  if (first.progressionStage.includes("REPS")) {
-    const set2Reps = latestThree.map((entry) => Number(entry.sets[1]?.reps ?? ""));
-    const validSet2Reps = set2Reps.every((value) => Number.isFinite(value) && value > 0);
-    if (validSet2Reps && set2Reps[0] === set2Reps[1] && set2Reps[1] === set2Reps[2]) {
-      return "Set 2 reps have stalled for 3 sessions.";
+function computeStandardizedImprovement(currentCps: number, personalMinCps: number, personalMaxCps: number): number {
+  if (!Number.isFinite(currentCps) || !Number.isFinite(personalMinCps) || !Number.isFinite(personalMaxCps)) {
+    return 0;
+  }
+  const denom = personalMaxCps - personalMinCps;
+  if (denom <= 0) return 0;
+  const value = (currentCps - personalMinCps) / denom;
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function coachingInsight(
+  sessions: CpsSessionPoint[],
+  targetReps: number
+): { title: string; body: string; tone: "amber" | "rose" } | null {
+  if (sessions.length < 3) return null;
+
+  // 1) Repeated progression-stage stall
+  const latestThree = sessions.slice(0, 3);
+  const stage = latestThree[0]?.progressionStage ?? "—";
+  if (stage !== "—" && latestThree.every((s) => s.progressionStage === stage)) {
+    return {
+      title: "Coaching Insight",
+      body:
+        "You’ve been stuck at the same progression step for multiple sessions. Try resting slightly longer, leaving 1 rep in reserve on your first set, or dropping one increment and rebuilding cleaner volume.",
+      tone: "amber"
+    };
+  }
+
+  // 2) Repeated failed weight jumps
+  const latestFive = sessions.slice(0, 5);
+  let failedJumps = 0;
+  for (let i = 0; i < latestFive.length - 1; i += 1) {
+    const current = latestFive[i];
+    const previous = latestFive[i + 1];
+    if (!current || !previous) continue;
+    const heavierAttempt = current.maxWeight > previous.maxWeight;
+    const repsNotStable =
+      (current.topSetRepsAtMaxWeight ?? 0) < Math.max(1, targetReps - 1);
+    if (heavierAttempt && repsNotStable) failedJumps += 1;
+  }
+  if (failedJumps >= 2) {
+    return {
+      title: "Coaching Insight",
+      body:
+        "You’ve attempted heavier weight multiple times without stabilizing reps. Stay at this weight until reps settle, or drop one increment and rebuild momentum.",
+      tone: "amber"
+    };
+  }
+
+  // 3) CPS plateau
+  if (sessions.length >= 4) {
+    const recent = sessions.slice(0, 4).map((s) => s.sessionCps);
+    const min = Math.min(...recent);
+    const max = Math.max(...recent);
+    const mean = recent.reduce((sum, n) => sum + n, 0) / recent.length;
+    const spreadPercent = mean > 0 ? ((max - min) / mean) * 100 : 0;
+    if (spreadPercent <= 3) {
+      return {
+        title: "Coaching Insight",
+        body:
+          "Your performance has plateaued recently. Try adjusting rest periods, review training frequency, and consider whether fatigue is limiting session quality.",
+        tone: "amber"
+      };
     }
   }
 
-  return "You've been on the same progression step for 3 sessions.";
+  // 4) Volume up while CPS flat/down
+  if (sessions.length >= 5) {
+    const recent = sessions.slice(0, 3);
+    const prior = sessions.slice(3, 5);
+    const recentAvgCps = recent.reduce((sum, s) => sum + s.sessionCps, 0) / recent.length;
+    const priorAvgCps = prior.reduce((sum, s) => sum + s.sessionCps, 0) / prior.length;
+    const recentAvgVol = recent.reduce((sum, s) => sum + s.sessionVolume, 0) / recent.length;
+    const priorAvgVol = prior.reduce((sum, s) => sum + s.sessionVolume, 0) / prior.length;
+    if (recentAvgVol > priorAvgVol * 1.05 && recentAvgCps <= priorAvgCps * 1.01) {
+      return {
+        title: "Coaching Insight",
+        body:
+          "You’re doing more total work, but performance isn’t improving. More volume may not be helping right now—consider reducing fatigue and focusing on quality sets.",
+        tone: "rose"
+      };
+    }
+  }
+
+  return null;
+}
+
+function momentumInsight(
+  sessions: CpsSessionPoint[]
+): { title: string; body: string; tone: "emerald" | "amber" | "rose" } | null {
+  if (sessions.length < 3) return null;
+  const latest = sessions[0];
+  const oldest = sessions[sessions.length - 1];
+  if (!latest || !oldest) return null;
+  const daySpan =
+    (new Date(latest.submittedAt).getTime() - new Date(oldest.submittedAt).getTime()) /
+    (1000 * 60 * 60 * 24);
+  if (sessions.length < 4 && daySpan < 30) return null;
+
+  const recent = sessions.slice(0, 3);
+  const prior = sessions.slice(3, Math.min(sessions.length, 7));
+  if (recent.length < 2 || prior.length < 1) return null;
+  const recentAvg = recent.reduce((sum, s) => sum + s.sessionCps, 0) / recent.length;
+  const priorAvg = prior.reduce((sum, s) => sum + s.sessionCps, 0) / prior.length;
+  if (!Number.isFinite(recentAvg) || !Number.isFinite(priorAvg) || priorAvg <= 0) return null;
+
+  const pct = ((recentAvg - priorAvg) / priorAvg) * 100;
+  if (pct >= 4) {
+    return {
+      title: "Momentum: Trending Up",
+      body: `Your CPS is up ${Math.round(pct)}% over recent sessions.`,
+      tone: "emerald"
+    };
+  }
+  if (pct <= -4) {
+    return {
+      title: "Momentum: Dropping",
+      body: "Your recent performance has dipped compared to your normal range.",
+      tone: "rose"
+    };
+  }
+  return {
+    title: "Momentum: Stable",
+    body: "Your performance has remained consistent recently.",
+    tone: "amber"
+  };
 }
 
 /** Subtle green / amber / red for Improved / Matched / Below. */
@@ -613,13 +758,73 @@ export default function WorkoutPage() {
     return history.find((entry) => entry.isDraft !== true) ?? null;
   }, [selectedExercise, historyByExerciseId]);
 
-  const progressionInsightMessage = useMemo((): string | null => {
+  const dashboardCompletedCpsSessions = useMemo(() => {
+    if (!submission) return [];
+    return completedCpsSessions(historyByExerciseId[submission.exerciseId] ?? []);
+  }, [historyByExerciseId, submission]);
+
+  const cpsTrendPoints = useMemo(() => {
+    const points = dashboardCompletedCpsSessions
+      .slice(0, 12)
+      .reverse()
+      .map((entry) => ({
+        workoutId: entry.workoutId,
+        dateLabel: new Date(entry.submittedAt).toLocaleDateString(undefined, {
+          month: "numeric",
+          day: "numeric"
+        }),
+        cps: entry.sessionCps
+      }));
+    return points;
+  }, [dashboardCompletedCpsSessions]);
+
+  const cpsTrendChart = useMemo(() => {
+    if (cpsTrendPoints.length < 3) return null;
+    const width = 320;
+    const height = 120;
+    const padLeft = 8;
+    const padRight = 8;
+    const padTop = 8;
+    const padBottom = 22;
+    const values = cpsTrendPoints.map((p) => p.cps);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = Math.max(0.1, max - min);
+    const yPad = Math.max(0.15, span * 0.12);
+    const minY = min - yPad;
+    const maxY = max + yPad;
+    const usableW = width - padLeft - padRight;
+    const usableH = height - padTop - padBottom;
+    const pointStep = cpsTrendPoints.length > 1 ? usableW / (cpsTrendPoints.length - 1) : usableW;
+    const toY = (v: number) => padTop + ((maxY - v) / (maxY - minY || 1)) * usableH;
+    const coords = cpsTrendPoints.map((p, i) => ({
+      x: padLeft + i * pointStep,
+      y: toY(p.cps),
+      label: p.dateLabel,
+      cps: p.cps
+    }));
+    const polyline = coords.map((c) => `${c.x},${c.y}`).join(" ");
+    return { width, height, coords, polyline, min, max };
+  }, [cpsTrendPoints]);
+
+  const momentumMessage = useMemo(
+    () => momentumInsight(dashboardCompletedCpsSessions),
+    [dashboardCompletedCpsSessions]
+  );
+
+  const coachingMessage = useMemo(() => {
     if (!selectedExercise) return null;
-    const recent = (historyByExerciseId[selectedExercise.id] ?? []).filter(
-      (entry) => entry.isDraft !== true
-    );
-    return progressionInsight(recent);
-  }, [selectedExercise, historyByExerciseId]);
+    return coachingInsight(dashboardCompletedCpsSessions, selectedExercise.targetReps);
+  }, [dashboardCompletedCpsSessions, selectedExercise]);
+
+  const standardizedImprovement = useMemo(() => {
+    if (!submission || submission.sessionCps === null) return 0;
+    if (dashboardCompletedCpsSessions.length < 2) return 0;
+    const cpsValues = dashboardCompletedCpsSessions.map((s) => s.sessionCps);
+    const min = Math.min(...cpsValues);
+    const max = Math.max(...cpsValues);
+    return computeStandardizedImprovement(submission.sessionCps, min, max);
+  }, [dashboardCompletedCpsSessions, submission]);
 
   const workoutsForSelectedDate = useMemo(
     () => getWorkoutsByDate(selectedWorkoutDate),
@@ -2778,12 +2983,6 @@ export default function WorkoutPage() {
                       Inputs
                     </button>
                   </div>
-                {progressionInsightMessage ? (
-                  <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    {progressionInsightMessage}
-                  </p>
-                ) : null}
-
                   <div className="mt-3 space-y-5">
                     {postSubmitView === "dashboard" ? (
                     <div>
@@ -2853,6 +3052,85 @@ export default function WorkoutPage() {
                         </div>
                       </div>
 
+                      {cpsTrendChart ? (
+                        <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            CPS trend
+                          </p>
+                          <svg
+                            viewBox={`0 0 ${cpsTrendChart.width} ${cpsTrendChart.height}`}
+                            className="mt-2 h-28 w-full"
+                            role="img"
+                            aria-label="Recent CPS trend chart"
+                          >
+                            <polyline
+                              fill="none"
+                              stroke="rgb(15 23 42)"
+                              strokeWidth="2"
+                              points={cpsTrendChart.polyline}
+                            />
+                            {cpsTrendChart.coords.map((point) => (
+                              <circle
+                                key={`trend-point-${point.x}-${point.y}`}
+                                cx={point.x}
+                                cy={point.y}
+                                r="2.5"
+                                fill="rgb(15 23 42)"
+                              />
+                            ))}
+                            <text x="6" y="12" className="fill-slate-500 text-[9px]">
+                              {formatCps(cpsTrendChart.max)}
+                            </text>
+                            <text x="6" y={cpsTrendChart.height - 12} className="fill-slate-500 text-[9px]">
+                              {formatCps(cpsTrendChart.min)}
+                            </text>
+                            {cpsTrendChart.coords.map((point, index) => {
+                              const last = cpsTrendChart.coords.length - 1;
+                              if (!(index === 0 || index === last || index === Math.floor(last / 2))) return null;
+                              return (
+                                <text
+                                  key={`trend-label-${point.x}-${point.label}`}
+                                  x={point.x}
+                                  y={cpsTrendChart.height - 3}
+                                  textAnchor="middle"
+                                  className="fill-slate-500 text-[9px]"
+                                >
+                                  {point.label}
+                                </text>
+                              );
+                            })}
+                          </svg>
+                        </div>
+                      ) : null}
+
+                      {momentumMessage ? (
+                        <div
+                          className={`mt-3 rounded-md px-3 py-2 text-sm ${
+                            momentumMessage.tone === "emerald"
+                              ? "border border-emerald-200 bg-emerald-50 text-emerald-900"
+                              : momentumMessage.tone === "rose"
+                                ? "border border-rose-200 bg-rose-50 text-rose-900"
+                                : "border border-amber-200 bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          <p className="font-semibold">{momentumMessage.title}</p>
+                          <p>{momentumMessage.body}</p>
+                        </div>
+                      ) : null}
+
+                      {coachingMessage ? (
+                        <div
+                          className={`mt-3 rounded-md px-3 py-2 text-sm ${
+                            coachingMessage.tone === "rose"
+                              ? "border border-rose-200 bg-rose-50 text-rose-900"
+                              : "border border-amber-200 bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          <p className="font-semibold">{coachingMessage.title}</p>
+                          <p>{coachingMessage.body}</p>
+                        </div>
+                      ) : null}
+
                       <div className="mt-5 rounded-lg border border-slate-200/90 border-l-[3px] border-l-slate-600 bg-slate-50 px-3 py-3 sm:px-4 sm:py-4">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                           Next Session Focus
@@ -2870,6 +3148,9 @@ export default function WorkoutPage() {
                           </dd>
                         </div>
                       </dl>
+                      <span className="sr-only">
+                        standardized-improvement:{Math.round(standardizedImprovement * 100)}
+                      </span>
                     </div>
                     ) : (
                       <div className="space-y-4">

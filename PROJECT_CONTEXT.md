@@ -236,10 +236,17 @@ Also includes volume comparison.
 
 Simple progression insight:
 
-* In the workout analysis panel, the app checks the selected exercise's 3 most recent sessions.
-* If the same progression stage repeats across all 3, it shows a subtle insight message.
-* When the repeated stage is a reps stage and Set 2 reps are unchanged across those 3 sessions, the message can call out the Set 2 reps stall.
-* This is informational only (no deload/fatigue recommendations yet).
+* Post-submit dashboard now includes compact long-term context for the selected exercise (completed sessions only; drafts excluded):
+  * **CPS trend chart** (recent session dates vs CPS; dynamic y-scale with padding; compact/mobile-safe rendering).
+  * **Strength momentum** insight (`Trending Up` / `Stable` / `Dropping`) based on recent CPS vs prior baseline windows.
+  * **Single-priority Coaching Insight** box with actionable suggestions for:
+    1) repeated progression-stage stalls,
+    2) repeated failed weight-jump attempts,
+    3) CPS plateaus,
+    4) rising volume with flat/down CPS.
+* Internal utility added for future modeling: **standardized improvement**  
+  `standardizedImprovement = (currentCps - personalMinCps) / (personalMaxCps - personalMinCps)`  
+  clamped to `[0, 1]`, safe on divide-by-zero, and based on valid completed CPS sessions only.
 
 ---
 
