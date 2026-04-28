@@ -4,6 +4,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
 import { generateRecommendation } from "@/lib/generateRecommendation";
+import { canSubmitWorkoutInputs, parseTrimmedNumberString } from "@/lib/workoutInputValidation";
 
 export type AdminUserSummary = {
   userId: string;
@@ -486,33 +487,14 @@ function normalizeHistoricalSetInput(
   trackRir: boolean,
   trackRpe: boolean
 ) {
-  const time = Number(set.timeSeconds);
   return {
     weight: set.weight,
     reps: set.reps,
-    timeSeconds: Number.isFinite(time) && time > 0 ? time : 0,
+    timeSeconds: parseTrimmedNumberString(set.timeSeconds),
     rir: trackRir && exerciseType !== "time" ? (set.rir ?? "") : "",
     tir: trackRir && exerciseType === "time" ? (set.tir ?? "") : "",
     rpe: trackRpe ? (set.rpe ?? "") : ""
   };
-}
-
-function hasAtLeastOneValidHistoricalSet(
-  sets: AdminHistoricalSetInput[],
-  exerciseType: "weight" | "bodyweight" | "time",
-  foundation: number
-): boolean {
-  if (exerciseType === "time") {
-    return sets.some((set) => Number(set.timeSeconds) > 0);
-  }
-  return sets.some((set) => {
-    const reps = Number(set.reps);
-    const weight = Number(set.weight);
-    if (!(reps > 0)) return false;
-    if (weight > 0) return true;
-    if (exerciseType === "bodyweight" && foundation > 0 && weight === 0) return true;
-    return false;
-  });
 }
 
 function sameConfig(exercise: StoredUserExercise, presetExercise: PresetExerciseConfig): boolean {
@@ -951,8 +933,8 @@ export async function addHistoricalPresetWorkoutsToUserDate(
       matched = newExercise;
     }
 
-    if (!hasAtLeastOneValidHistoricalSet(completed.sets, presetExercise.type, matched.foundation)) {
-      throw new Error(`Add at least one valid completed set for ${presetExercise.name}.`);
+    if (!canSubmitWorkoutInputs(completed.sets, presetExercise.type, matched.foundation)) {
+      throw new Error(`Complete set 1 and fill every remaining required field for ${presetExercise.name} (use 0 where needed).`);
     }
 
     const performanceSets = completed.sets.map((set) => ({ weight: set.weight, reps: set.reps }));

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addAdminHistoricalPresetToUserDateAction,
   assignAdminPresetToUserDateAction,
@@ -12,6 +12,7 @@ import {
   setAdminUserRestDayAction
 } from "@/lib/admin/adminDataActions";
 import { supabase } from "@/lib/supabaseClient";
+import { canSubmitWorkoutInputs } from "@/lib/workoutInputValidation";
 import { actionButtonClass, actionButtonClasses } from "@/components/action-button";
 
 type WorkoutRow = {
@@ -141,6 +142,16 @@ export function AdminUserWorkoutsClient({
   const [isUpdatingRestDay, setIsUpdatingRestDay] = useState(false);
 
   const selectedPreset = assignablePresets.find((preset) => preset.id === selectedPresetId) ?? null;
+
+  const historicalAssignInputsValid = useMemo(() => {
+    if (!selectedPreset || addWorkoutMode !== "historical") return true;
+    for (const exercise of selectedPreset.exercises) {
+      const rows = historicalSetsByExerciseId[exercise.id];
+      if (!rows?.length) return false;
+      if (!canSubmitWorkoutInputs(rows, exercise.type, 0)) return false;
+    }
+    return true;
+  }, [selectedPreset, addWorkoutMode, historicalSetsByExerciseId]);
 
   const loadUserAdminData = useCallback(async (accessToken: string) => {
     const [workoutsRes, presetsRes, restDatesRes] = await Promise.all([
@@ -874,7 +885,8 @@ export function AdminUserWorkoutsClient({
               !adminAccessToken ||
               !selectedPresetId ||
               !assignDate ||
-              assignablePresets.length === 0
+              assignablePresets.length === 0 ||
+              (addWorkoutMode === "historical" && !historicalAssignInputsValid)
             }
             onClick={async () => {
               if (!adminAccessToken || !selectedPresetId || !assignDate) return;

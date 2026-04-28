@@ -15,6 +15,12 @@ import { type WorkoutHistoryEntry, useWorkoutHistory } from "@/app/workout-histo
 import { WorkoutDateNavigation } from "@/app/workout/WorkoutDateNavigation";
 import { isYmdInWorkoutRange } from "@/app/workout/workoutDateNavUtils";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  canSubmitWorkoutInputs,
+  hasSubmittableSnapshotSets,
+  isFirstSetCompleteForExercise,
+  parseTrimmedNumberString
+} from "@/lib/workoutInputValidation";
 import { ActionButton, actionButtonClass, actionButtonClasses } from "@/components/action-button";
 
 type SetLog = {
@@ -160,52 +166,6 @@ function averageValidSetValue(
     .filter((value) => Number.isFinite(value) && value > 0);
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function hasAtLeastOneValidSet(
-  sets: SetLog[],
-  exerciseType: Exercise["type"],
-  foundation: number
-): boolean {
-  const requiresWeightAndTime = false; // Reserved for future hybrid/time+load requirements.
-  if (exerciseType === "time") {
-    return sets.some((set) =>
-      requiresWeightAndTime
-        ? Number(set.timeSeconds) > 0 && Number(set.weight) > 0
-        : Number(set.timeSeconds) > 0
-    );
-  }
-  return sets.some((set) => {
-    const reps = Number(set.reps);
-    const weight = Number(set.weight);
-    if (!(reps > 0)) return false;
-    if (weight > 0) return true;
-    if (exerciseType === "bodyweight" && foundation > 0 && weight === 0) return true;
-    return false;
-  });
-}
-
-function hasAtLeastOneValidSnapshotSet(
-  sets: Array<{ weight: string; reps: string; timeSeconds?: number }>,
-  exerciseType: Exercise["type"],
-  foundation: number
-): boolean {
-  const requiresWeightAndTime = false; // Reserved for future hybrid/time+load requirements.
-  if (exerciseType === "time") {
-    return sets.some((set) =>
-      requiresWeightAndTime
-        ? Number(set.timeSeconds ?? 0) > 0 && Number(set.weight) > 0
-        : Number(set.timeSeconds ?? 0) > 0
-    );
-  }
-  return sets.some((set) => {
-    const reps = Number(set.reps);
-    const weight = Number(set.weight);
-    if (!(reps > 0)) return false;
-    if (weight > 0) return true;
-    if (exerciseType === "bodyweight" && foundation > 0 && weight === 0) return true;
-    return false;
-  });
 }
 
 function countValidSetsForWorkoutEntry(
@@ -602,11 +562,22 @@ export default function WorkoutPage() {
       ),
     [historyByExerciseId]
   );
-  const canSubmitCurrentWorkout = hasAtLeastOneValidSet(
-    sets,
-    selectedExercise?.type ?? "weight",
-    selectedExercise?.foundation ?? 0
-  );
+  const canSubmitCurrentWorkout =
+    selectedExercise &&
+    canSubmitWorkoutInputs(
+      sets,
+      selectedExercise.type,
+      selectedExercise.foundation
+    );
+
+  const canSaveEditedWorkout =
+    selectedExercise &&
+    editData &&
+    canSubmitWorkoutInputs(
+      editData,
+      selectedExercise.type,
+      selectedExercise.foundation
+    );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -815,14 +786,7 @@ export default function WorkoutPage() {
         exerciseName: configuredExercise.name,
         workoutDate: selectedWorkoutDate,
         isDraft: true,
-        sets: buildSetsFromExercise(configuredExercise.setCount).map(() => ({
-          weight: "",
-          reps: "",
-          timeSeconds: 0,
-          rir: "",
-          tir: "",
-          rpe: ""
-        })),
+        sets: buildSetsFromExercise(configuredExercise.setCount),
         sessionVolume: 0,
         sessionCps: null,
         progressionStage: "—",
@@ -976,7 +940,13 @@ export default function WorkoutPage() {
     if (isDateMarkedRest(selectedWorkoutDate)) return;
 
     if (!canSubmitCurrentWorkout) {
-      setSubmitValidationError("Log at least one set to submit this workout.");
+      setSubmitValidationError(
+        selectedExercise &&
+          sets.length > 0 &&
+          !isFirstSetCompleteForExercise(sets[0], selectedExercise.type, selectedExercise.foundation)
+          ? "Complete set 1 before submitting."
+          : "Fill every remaining required field for each set (use 0 where needed)."
+      );
       return;
     }
     setSubmitValidationError(null);
@@ -1031,7 +1001,7 @@ export default function WorkoutPage() {
     const setsSnapshotForStorage = setsSnapshot.map((set) => ({
       weight: set.weight,
       reps: set.reps,
-      timeSeconds: Number(set.timeSeconds) > 0 ? Number(set.timeSeconds) : 0,
+      timeSeconds: parseTrimmedNumberString(set.timeSeconds),
       rir: set.rir,
       tir: set.tir,
       rpe: selectedExercise.trackRpe ? set.rpe : ""
@@ -1161,13 +1131,18 @@ export default function WorkoutPage() {
     const nextSetsForStorage = nextSets.map((set) => ({
       weight: set.weight,
       reps: set.reps,
-      timeSeconds: Number(set.timeSeconds) > 0 ? Number(set.timeSeconds) : 0,
+      timeSeconds: parseTrimmedNumberString(set.timeSeconds),
       rir: set.rir,
       tir: set.tir,
       rpe: set.rpe
     }));
-    if (!hasAtLeastOneValidSet(nextSets, selectedExercise.type, selectedExercise.foundation)) {
-      setSubmitValidationError("Log at least one set to submit this workout.");
+    if (!canSaveEditedWorkout) {
+      setSubmitValidationError(
+        selectedExercise &&
+          !isFirstSetCompleteForExercise(nextSets[0], selectedExercise.type, selectedExercise.foundation)
+          ? "Complete set 1 before saving."
+          : "Fill every remaining required field for each set (use 0 where needed)."
+      );
       return;
     }
     setSubmitValidationError(null);
@@ -1230,16 +1205,18 @@ export default function WorkoutPage() {
     const entryIndex = list.findIndex((item) => item.workoutId === entry.workoutId);
     const previousEntry = entryIndex >= 0 ? list[entryIndex + 1] ?? null : null;
     const setsSnapshot = entry.sets.map((set) => ({
-      weight: set.weight,
-      reps: set.reps,
-      timeSeconds: String(set.timeSeconds ?? 0),
+      weight: String(set.weight ?? ""),
+      reps: String(set.reps ?? ""),
+      timeSeconds:
+        set.timeSeconds === undefined || set.timeSeconds === null ? "" : String(set.timeSeconds),
       rir: set.rir ?? "",
       tir: set.tir ?? "",
       rpe: set.rpe ?? ""
     }));
     const exerciseType = exerciseMeta?.type ?? "weight";
     const isUnsubmittedEntry =
-      entry.isDraft === true || !hasAtLeastOneValidSnapshotSet(entry.sets, exerciseType, exerciseMeta?.foundation ?? 0);
+      entry.isDraft === true ||
+      !hasSubmittableSnapshotSets(entry.sets, exerciseType, exerciseMeta?.foundation ?? 0);
 
     setSelectedWorkoutDate(entry.workoutDate ?? getLocalDateString(new Date(entry.submittedAt)));
     setSelectedId(entry.exerciseId);
@@ -3066,6 +3043,7 @@ export default function WorkoutPage() {
                             <button
                               type="button"
                               onClick={handleSaveWorkoutChanges}
+                              disabled={!canSaveEditedWorkout}
                               className={actionButtonClasses.primary}
                             >
                               Save Changes

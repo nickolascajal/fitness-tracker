@@ -26,7 +26,8 @@ import { supabase } from "@/lib/supabaseClient";
 export type WorkoutSetSnapshot = {
   weight: string;
   reps: string;
-  timeSeconds?: number;
+  /** Numeric duration; may be `""` on drafts while the user has not entered a value yet. */
+  timeSeconds?: number | string;
   rir?: string;
   tir?: string;
   rpe?: string;
@@ -152,15 +153,22 @@ function normalizeWorkoutEntry(
       weight: typeof s?.weight === "string" ? s.weight : String(s?.weight ?? ""),
       reps: typeof s?.reps === "string" ? s.reps : String(s?.reps ?? ""),
       timeSeconds: (() => {
-        if (typeof s?.timeSeconds === "number" && Number.isFinite(s.timeSeconds) && s.timeSeconds >= 0) {
-          return s.timeSeconds;
+        const raw = s?.timeSeconds;
+        if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+          return raw;
+        }
+        if (typeof raw === "string") {
+          const t = raw.trim();
+          if (t === "") return "";
+          const n = Number(t);
+          return Number.isFinite(n) && n >= 0 ? n : 0;
         }
         // Backward compatibility for legacy `time` string snapshots.
         if (typeof (s as { time?: unknown })?.time === "string") {
           const parsed = Number((s as { time?: string }).time ?? "");
           return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
         }
-        return 0;
+        return "";
       })(),
       rir: typeof s?.rir === "string" ? s.rir : "",
       tir: typeof s?.tir === "string" ? s.tir : "",
