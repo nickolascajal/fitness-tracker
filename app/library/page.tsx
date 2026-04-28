@@ -203,6 +203,25 @@ export default function LibraryPage() {
     return masterExerciseNames.filter((name) => name.toLowerCase().includes(query)).slice(0, 12);
   }, [masterExerciseNames, presetExerciseSearchQuery]);
 
+  const presetCreateQueryTrim = presetExerciseSearchQuery.trim();
+  const presetCreateDraftNameTrim = presetExerciseDraft.name.trim();
+
+  /** Offer “Use as new exercise name” only while the search still diverges from a locked-in custom choice (or nothing chosen yet). */
+  const showPresetCreateUseCustomNameButton = useMemo(() => {
+    if (!presetCreateQueryTrim) return false;
+    if (masterNamesLower.has(exerciseDuplicateKey(presetCreateQueryTrim))) return false;
+    return (
+      presetCreateDraftNameTrim !== presetCreateQueryTrim || presetCreateDraftNameTrim === ""
+    );
+  }, [masterNamesLower, presetCreateQueryTrim, presetCreateDraftNameTrim]);
+
+  /** Custom name matches search and is not on the master list — hide the action button and show confirmation UI. */
+  const isPresetCreateCustomNameConfirmed = useMemo(() => {
+    if (!presetCreateDraftNameTrim) return false;
+    if (masterNamesLower.has(exerciseDuplicateKey(presetCreateDraftNameTrim))) return false;
+    return presetCreateDraftNameTrim === presetCreateQueryTrim;
+  }, [masterNamesLower, presetCreateDraftNameTrim, presetCreateQueryTrim]);
+
   const completeUsedExercisesGuide = () => {
     setHasSeenUsedExercisesGuide(true);
     try {
@@ -842,8 +861,7 @@ export default function LibraryPage() {
                       ) : (
                         <p className="text-sm text-slate-600">No matching master exercise.</p>
                       )}
-                      {presetExerciseSearchQuery.trim() &&
-                      !masterNamesLower.has(exerciseDuplicateKey(presetExerciseSearchQuery.trim())) ? (
+                      {showPresetCreateUseCustomNameButton ? (
                         <button
                           type="button"
                           onClick={() =>
@@ -857,12 +875,31 @@ export default function LibraryPage() {
                           Use &quot;{presetExerciseSearchQuery.trim()}&quot; as a new exercise name
                         </button>
                       ) : null}
+                      {isPresetCreateCustomNameConfirmed ? (
+                        <p
+                          className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50/95 px-2.5 py-2 text-xs font-medium text-emerald-950"
+                          role="status"
+                        >
+                          <span className="text-emerald-600" aria-hidden>
+                            ✓
+                          </span>
+                          <span>
+                            Selected custom exercise:{" "}
+                            <span className="font-semibold">{presetCreateDraftNameTrim}</span>
+                          </span>
+                        </p>
+                      ) : null}
                     </div>
                     <p className="text-xs text-slate-600">
                       Selected exercise:{" "}
                       <span className="font-medium text-slate-800">
                         {presetExerciseDraft.name.trim() || "None selected yet"}
                       </span>
+                      {isPresetCreateCustomNameConfirmed ? (
+                        <span className="ml-2 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-emerald-900">
+                          Custom
+                        </span>
+                      ) : null}
                     </p>
                     <div className="grid gap-2 sm:grid-cols-4">
                       <input

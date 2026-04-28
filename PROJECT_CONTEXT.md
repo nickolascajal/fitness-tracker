@@ -501,7 +501,7 @@ RIR/RPE behavior:
   - Step 2: add one or more configured exercises, then `Save Preset`
     - exercise add uses a searchable master-exercise picker with type-to-filter
     - selecting a master exercise fills the preset exercise name for that row
-    - when no master exercise matches, typed text can be used as a new exercise name for that preset row
+    - when no master exercise matches, typed text can be used as a new exercise name for that preset row (Use … as a new exercise name); after choosing a custom name, that control hides and an inline **selected custom exercise** confirmation (checkmark + **Custom** badge on the selected line) appears while the search matches the chosen name; editing the search again re-offers the custom-name action when appropriate (**preset edit** → Add Exercise uses a plain name field only and does not duplicate this master-search UI)
     - per-row config fields stay explicit in the preset draft (`setCount`, `targetReps/time`, `increment`, `unit`, `trackRir`, `trackRpe`)
 - `Back to Library` exits the flow without saving partial draft data.
 - Nothing is persisted until `Save Preset` is clicked.
