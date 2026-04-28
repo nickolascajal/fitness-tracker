@@ -272,6 +272,66 @@ export type AdminAddHistoricalResult = {
   date: string;
 };
 
+export type AdminUserExerciseConfig = {
+  id: string;
+  name: string;
+  type: "weight" | "bodyweight" | "time";
+  targetReps: number;
+  setCount: number;
+  increment: number;
+  unit: "lbs" | "kg";
+  trackRir: boolean;
+  trackRpe: boolean;
+  foundation: number;
+};
+
+export type AdminSingleWorkoutSetInput = {
+  weight: string;
+  reps: string;
+  timeSeconds: string;
+  rir?: string;
+  tir?: string;
+  rpe?: string;
+};
+
+export type AdminSingleWorkoutInput = {
+  date: string;
+  mode: "planned" | "historical";
+  exerciseId?: string;
+  exerciseConfig?: {
+    name: string;
+    type: "weight" | "bodyweight" | "time";
+    targetReps: number;
+    setCount: number;
+    increment: number;
+    unit: "lbs" | "kg";
+    trackRir: boolean;
+    trackRpe: boolean;
+  };
+  prefill?: AdminDraftPrefillInput;
+  sets?: AdminSingleWorkoutSetInput[];
+};
+
+export type AdminSingleWorkoutResult = {
+  addedCount: number;
+  date: string;
+};
+
+export type AdminUpdateWorkoutInput = {
+  date: string;
+  mode: "planned" | "historical";
+  prefill?: AdminDraftPrefillInput;
+  sets?: AdminSingleWorkoutSetInput[];
+};
+
+export type AdminUpdateWorkoutResult = {
+  updated: boolean;
+};
+
+export type AdminDeleteWorkoutResult = {
+  deleted: boolean;
+};
+
 export type AdminDraftPrefillInput = {
   weight?: string;
   reps?: string;
@@ -989,6 +1049,325 @@ export async function addHistoricalPresetWorkoutsToUserDate(
   }
 
   return { addedCount: completedRows.length, date };
+}
+
+export async function getUserExerciseConfigsForAdmin(userId: string): Promise<AdminUserExerciseConfig[]> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const { data, error } = await admin.from("exercises").select("data").eq("user_id", userId);
+  if (error) {
+    throw new Error(`Failed to load exercises for user: ${error.message}`);
+  }
+  return ((data ?? []) as Array<{ data?: unknown }>)
+    .map((row) => parseStoredExerciseRow(row))
+    .filter((row): row is StoredUserExercise => Boolean(row))
+    .map((row) => ({ ...row }));
+}
+
+async function resolveExerciseForSingleWorkout(
+  userId: string,
+  admin: ReturnType<typeof getServiceRoleSupabase>,
+  input: AdminSingleWorkoutInput
+): Promise<StoredUserExercise> {
+  const { data: exerciseRows, error: exercisesError } = await admin
+    .from("exercises")
+    .select("id,data")
+    .eq("user_id", userId);
+  if (exercisesError) {
+    throw new Error(`Failed to load exercises: ${exercisesError.message}`);
+  }
+  const userExercises = ((exerciseRows ?? []) as Array<{ data?: unknown }>)
+    .map((row) => parseStoredExerciseRow(row))
+    .filter((exercise): exercise is StoredUserExercise => Boolean(exercise));
+
+  if (input.exerciseId) {
+    const existing = userExercises.find((exercise) => exercise.id === input.exerciseId);
+    if (!existing) {
+      throw new Error("Selected exercise config was not found for this user.");
+    }
+    return existing;
+  }
+
+  const cfg = input.exerciseConfig;
+  if (!cfg) {
+    throw new Error("Provide an exercise config or select an existing exercise.");
+  }
+  const trimmedName = cfg.name.trim();
+  if (!trimmedName) {
+    throw new Error("Exercise name is required.");
+  }
+  const targetReps = Number(cfg.targetReps);
+  const setCount = Number(cfg.setCount);
+  const increment = Number(cfg.increment);
+  if (!Number.isFinite(targetReps) || !Number.isFinite(setCount) || !Number.isFinite(increment)) {
+    throw new Error("Exercise config contains invalid numbers.");
+  }
+  if (targetReps <= 0 || setCount <= 0 || increment < 0) {
+    throw new Error("Exercise target/set/increment values are out of range.");
+  }
+  const created: StoredUserExercise = {
+    id: crypto.randomUUID(),
+    name: trimmedName,
+    type: cfg.type,
+    targetReps,
+    setCount,
+    increment,
+    unit: cfg.unit === "kg" ? "kg" : "lbs",
+    trackRir: cfg.trackRir === true,
+    trackRpe: cfg.trackRpe === true,
+    foundation: 0
+  };
+  const { error: insertExerciseError } = await admin.from("exercises").insert({
+    user_id: userId,
+    data: {
+      ...created,
+      isUserCreated: true
+    }
+  });
+  if (insertExerciseError) {
+    throw new Error(`Failed to create exercise config: ${insertExerciseError.message}`);
+  }
+  return created;
+}
+
+async function assertNotRestDay(
+  userId: string,
+  date: string,
+  admin: ReturnType<typeof getServiceRoleSupabase>
+): Promise<void> {
+  const { data: rows, error } = await admin.from("workouts").select("data").eq("user_id", userId).eq("date", date);
+  if (error) {
+    throw new Error(`Failed to verify date availability: ${error.message}`);
+  }
+  const isRestDay = ((rows ?? []) as Array<{ data?: unknown }>).some((row) => {
+    let payload = row.data;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = null;
+      }
+    }
+    return parseRestDayMarkerPayload(payload) !== null;
+  });
+  if (isRestDay) {
+    throw new Error("That date is marked as a rest day. Clear rest day first.");
+  }
+}
+
+export async function addSingleWorkoutToUserDate(
+  userId: string,
+  input: AdminSingleWorkoutInput
+): Promise<AdminSingleWorkoutResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const date = input.date.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Invalid date format.");
+  }
+  await assertNotRestDay(userId, date, admin);
+  const exercise = await resolveExerciseForSingleWorkout(userId, admin, input);
+  const now = new Date().toISOString();
+
+  if (input.mode === "planned") {
+    const row = {
+      user_id: userId,
+      date,
+      data: {
+        workoutId: crypto.randomUUID(),
+        exerciseId: exercise.id,
+        exerciseName: exercise.name,
+        workoutDate: date,
+        isDraft: true,
+        sets: buildDraftSetsWithPrefill(exercise.setCount, input.prefill),
+        sessionVolume: 0,
+        sessionCps: null,
+        progressionStage: "—",
+        recommendation: "Added by admin — fill in set data when workout is completed.",
+        submittedAt: now
+      }
+    };
+    const { error } = await admin.from("workouts").insert(row);
+    if (error) {
+      throw new Error(`Failed to add planned workout: ${error.message}`);
+    }
+    return { addedCount: 1, date };
+  }
+
+  const sets = input.sets ?? [];
+  if (sets.length === 0) {
+    throw new Error("Completed set data is required.");
+  }
+  if (!canSubmitWorkoutInputs(sets, exercise.type, exercise.foundation)) {
+    throw new Error(`Complete set 1 and fill every remaining required field for ${exercise.name} (use 0 where needed).`);
+  }
+  const performanceSets = sets.map((set) => ({ weight: set.weight, reps: set.reps }));
+  const stage = calculateProgressionStage(performanceSets, exercise.targetReps, exercise.setCount);
+  const recommendation = generateRecommendation(performanceSets, stage, exercise.targetReps, exercise.increment);
+  const effectiveCpsSets = buildEffectiveCpsSets(performanceSets, exercise.foundation);
+  const cpsInputSets =
+    exercise.type === "time"
+      ? sets.map((set) => ({
+          weight: set.weight,
+          reps: set.reps,
+          timeSeconds: Number(set.timeSeconds ?? "")
+        }))
+      : effectiveCpsSets.map((set) => ({ ...set }));
+  const sessionCps = calculateCPSWithOptions(cpsInputSets, exercise.targetReps, {
+    exerciseType: exercise.type,
+    targetTimeSeconds: exercise.targetReps,
+    foundation: exercise.foundation
+  });
+  const row = {
+    user_id: userId,
+    date,
+    data: {
+      workoutId: crypto.randomUUID(),
+      exerciseId: exercise.id,
+      exerciseName: exercise.name,
+      workoutDate: date,
+      isDraft: false,
+      sets: sets.map((set) => normalizeHistoricalSetInput(set, exercise.type, exercise.trackRir, exercise.trackRpe)),
+      sessionVolume: computeSessionVolumeFromSetInputs(sets),
+      sessionCps,
+      progressionStage: stage ?? "—",
+      recommendation,
+      submittedAt: now
+    }
+  };
+  const { error } = await admin.from("workouts").insert(row);
+  if (error) {
+    throw new Error(`Failed to add historical workout: ${error.message}`);
+  }
+  return { addedCount: 1, date };
+}
+
+export async function updateUserWorkoutForAdmin(
+  userId: string,
+  workoutRowId: string,
+  input: AdminUpdateWorkoutInput
+): Promise<AdminUpdateWorkoutResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const date = input.date.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Invalid date format.");
+  }
+  const { data: row, error } = await admin
+    .from("workouts")
+    .select("data")
+    .eq("id", workoutRowId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to load workout row: ${error.message}`);
+  }
+  if (!row) {
+    throw new Error("Workout row not found.");
+  }
+  let payload: unknown = (row as { data?: unknown }).data ?? null;
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      payload = null;
+    }
+  }
+  if (parseRestDayMarkerPayload(payload)) {
+    throw new Error("Cannot edit rest day marker rows.");
+  }
+  const parsed = parseWorkoutEntryFromJson(payload, date);
+  if (!parsed) {
+    throw new Error("Workout row is unparseable.");
+  }
+  const { data: exerciseRows, error: exerciseError } = await admin
+    .from("exercises")
+    .select("data")
+    .eq("user_id", userId);
+  if (exerciseError) {
+    throw new Error(`Failed to load exercises for workout edit: ${exerciseError.message}`);
+  }
+  const exercise = ((exerciseRows ?? []) as Array<{ data?: unknown }>)
+    .map((r) => parseStoredExerciseRow(r))
+    .filter((r): r is StoredUserExercise => Boolean(r))
+    .find((r) => r.id === parsed.exerciseId);
+  if (!exercise) {
+    throw new Error("Exercise config for this workout was not found.");
+  }
+
+  let nextData: Record<string, unknown>;
+  if (input.mode === "planned") {
+    nextData = {
+      ...payload as Record<string, unknown>,
+      workoutDate: date,
+      isDraft: true,
+      sets: buildDraftSetsWithPrefill(exercise.setCount, input.prefill),
+      sessionVolume: 0,
+      sessionCps: null,
+      progressionStage: "—",
+      recommendation: "Updated by admin — fill in set data when workout is completed.",
+      updatedAt: new Date().toISOString()
+    };
+  } else {
+    const sets = input.sets ?? [];
+    if (sets.length === 0) {
+      throw new Error("Completed set data is required.");
+    }
+    if (!canSubmitWorkoutInputs(sets, exercise.type, exercise.foundation)) {
+      throw new Error(`Complete set 1 and fill every remaining required field for ${exercise.name} (use 0 where needed).`);
+    }
+    const performanceSets = sets.map((set) => ({ weight: set.weight, reps: set.reps }));
+    const stage = calculateProgressionStage(performanceSets, exercise.targetReps, exercise.setCount);
+    const recommendation = generateRecommendation(performanceSets, stage, exercise.targetReps, exercise.increment);
+    const effectiveCpsSets = buildEffectiveCpsSets(performanceSets, exercise.foundation);
+    const cpsInputSets =
+      exercise.type === "time"
+        ? sets.map((set) => ({
+            weight: set.weight,
+            reps: set.reps,
+            timeSeconds: Number(set.timeSeconds ?? "")
+          }))
+        : effectiveCpsSets.map((set) => ({ ...set }));
+    const sessionCps = calculateCPSWithOptions(cpsInputSets, exercise.targetReps, {
+      exerciseType: exercise.type,
+      targetTimeSeconds: exercise.targetReps,
+      foundation: exercise.foundation
+    });
+    nextData = {
+      ...payload as Record<string, unknown>,
+      workoutDate: date,
+      isDraft: false,
+      sets: sets.map((set) => normalizeHistoricalSetInput(set, exercise.type, exercise.trackRir, exercise.trackRpe)),
+      sessionVolume: computeSessionVolumeFromSetInputs(sets),
+      sessionCps,
+      progressionStage: stage ?? "—",
+      recommendation,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  const { error: updateError } = await admin
+    .from("workouts")
+    .update({ date, data: nextData })
+    .eq("id", workoutRowId)
+    .eq("user_id", userId);
+  if (updateError) {
+    throw new Error(`Failed to update workout row: ${updateError.message}`);
+  }
+  return { updated: true };
+}
+
+export async function deleteUserWorkoutForAdmin(
+  userId: string,
+  workoutRowId: string
+): Promise<AdminDeleteWorkoutResult> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const { error } = await admin.from("workouts").delete().eq("id", workoutRowId).eq("user_id", userId);
+  if (error) {
+    throw new Error(`Failed to delete workout row: ${error.message}`);
+  }
+  return { deleted: true };
 }
 
 export function groupWorkoutsByDate(rows: AdminUserWorkoutRow[]): Map<string, AdminUserWorkoutRow[]> {

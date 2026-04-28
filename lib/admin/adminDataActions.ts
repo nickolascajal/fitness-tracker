@@ -3,8 +3,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
 import {
+  addSingleWorkoutToUserDate,
   type AdminDraftPrefillByExercise,
+  deleteUserWorkoutForAdmin,
   getRestDatesForUser,
+  getUserExerciseConfigsForAdmin,
   setRestDayForUser,
   addHistoricalPresetWorkoutsToUserDate,
   assignPresetDraftsToUserDate,
@@ -15,13 +18,20 @@ import {
   getUserWorkoutsForAdmin,
   type AdminAddHistoricalPresetInput,
   type AdminAddHistoricalResult,
+  type AdminDeleteWorkoutResult,
   type AdminCreatePresetInput,
   type AdminCreatePresetResult,
   type AdminAssignablePreset,
   type AdminOrphanCleanupResult,
   type AdminAssignPresetResult,
+  type AdminSingleWorkoutInput,
+  type AdminSingleWorkoutResult,
+  type AdminUpdateWorkoutInput,
+  type AdminUpdateWorkoutResult,
+  type AdminUserExerciseConfig,
   type AdminOverview,
-  type AdminUserWorkoutRow
+  type AdminUserWorkoutRow,
+  updateUserWorkoutForAdmin
 } from "./queries";
 
 export type AdminOverviewActionResult =
@@ -82,6 +92,38 @@ export type AdminCreatePresetActionResult =
 
 export type AdminAddHistoricalActionResult =
   | { ok: true; data: AdminAddHistoricalResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminUserExerciseConfigsActionResult =
+  | { ok: true; data: AdminUserExerciseConfig[] }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminSingleWorkoutActionResult =
+  | { ok: true; data: AdminSingleWorkoutResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminUpdateWorkoutActionResult =
+  | { ok: true; data: AdminUpdateWorkoutResult }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminDeleteWorkoutActionResult =
+  | { ok: true; data: AdminDeleteWorkoutResult }
   | {
       ok: false;
       code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
@@ -389,6 +431,115 @@ export async function addAdminHistoricalPresetToUserDateAction(
         error instanceof Error && error.message
           ? error.message
           : "Could not add historical workouts for this user."
+    };
+  }
+}
+
+export async function fetchAdminUserExerciseConfigsAction(
+  userId: string,
+  accessToken: string
+): Promise<AdminUserExerciseConfigsActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    const data = await getUserExerciseConfigsForAdmin(userId);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message: error instanceof Error && error.message ? error.message : "Could not load exercise configs."
+    };
+  }
+}
+
+export async function addAdminSingleWorkoutToUserDateAction(
+  userId: string,
+  input: AdminSingleWorkoutInput,
+  accessToken: string
+): Promise<AdminSingleWorkoutActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!input || typeof input !== "object") {
+    return { ok: false, code: "bad_request", message: "Invalid workout payload." };
+  }
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    const data = await addSingleWorkoutToUserDate(userId, input);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message: error instanceof Error && error.message ? error.message : "Could not add workout."
+    };
+  }
+}
+
+export async function updateAdminUserWorkoutAction(
+  userId: string,
+  workoutRowId: string,
+  input: AdminUpdateWorkoutInput,
+  accessToken: string
+): Promise<AdminUpdateWorkoutActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!workoutRowId.trim()) {
+    return { ok: false, code: "bad_request", message: "Workout row id is required." };
+  }
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    const data = await updateUserWorkoutForAdmin(userId, workoutRowId, input);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message: error instanceof Error && error.message ? error.message : "Could not update workout."
+    };
+  }
+}
+
+export async function deleteAdminUserWorkoutAction(
+  userId: string,
+  workoutRowId: string,
+  accessToken: string
+): Promise<AdminDeleteWorkoutActionResult> {
+  noStore();
+  if (!UUID_RE.test(userId)) {
+    return { ok: false, code: "bad_request", message: "Invalid user id." };
+  }
+  if (!workoutRowId.trim()) {
+    return { ok: false, code: "bad_request", message: "Workout row id is required." };
+  }
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    const data = await deleteUserWorkoutForAdmin(userId, workoutRowId);
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message: error instanceof Error && error.message ? error.message : "Could not delete workout."
     };
   }
 }
