@@ -143,6 +143,12 @@ Manual creation duplicate rule:
 * **Workout date (day list + week strip, `isDayExercisesListOpen` true):** the **week strip** renders **first**; the **workout / selected day** line and **Choose on calendar** sit **below** it for a less cramped mobile layout.
 * **Set input grid (pre-submit + post-submit edit):** column templates use **tighter `max-md` tracks**; parents use **`max-md:overflow-x-auto`** with a **minimum table width** so when **Weight, Reps, RIR, and RPE** (or time equivalents) are all shown, the row can **scroll horizontally** on narrow viewports instead of breaking. Header copy is **shortened** on small screens (e.g. `Wt (kg)`, `Reps (T 8)`, `Time (T 45s)`) while **preserving unit and target context**.
 * **Numeric workout inputs:** weight, reps, time (and optional RIR/TIR/RPE when shown) use **string state** so cleared fields stay **empty while typing** (no forced `0` on delete). **`Submit Workout`** / **`Save Changes`** stay disabled until **set 1** meets the existing exercise validity rules **and** every **later** visible row has **numeric** values in the required core fields (**including `0`**), with **no blanks**—this matches partial-completion logging (set 1 valid + trailing rows explicitly filled, even with zeros) without CPS/progression formula changes. Parsing for storage uses safe numeric conversion (no `NaN`). Shared rules live in `lib/workoutInputValidation.ts` (also used for admin **historical completed** assignment validation).
+* **Optional weekly bodyweight logging (`app/workout/page.tsx` + `app/bodyweight-provider.tsx` + `lib/bodyweight.ts`):**
+  - Sunday-only lightweight prompt in day overview: users can log bodyweight or `Skip for now`; no blocking behavior.
+  - Stored per authenticated user via Supabase table `bodyweight_logs` when available, with local client-storage fallback (`loadClientBodyweightLogs` / `saveClientBodyweightLogs`) for offline/table-unavailable cases.
+  - Log shape includes user-scoped week date (Sunday), bodyweight value, unit (`lbs`/`kg`), and timestamps.
+  - Carry-forward is computed, not backfilled: effective bodyweight for any date uses the latest prior logged value (`getEffectiveBodyweightForDate`) without creating fake rows.
+  - Helper utilities ready for future CPS/bodyweight analysis: `listBodyweightLogs`, `getLatestBodyweight`, `getEffectiveBodyweightForDate`.
 * Select exercise from workout flow
 * Input sets (weight + reps)
 * Optional per-set RIR/RPE inputs appear only when enabled on the selected exercise

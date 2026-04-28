@@ -8,7 +8,8 @@ export const STORAGE_KEYS = {
   activeClientId: "fitness-tracker:activeClientId",
   exercises: "fitness-tracker:exercises",
   workoutHistory: "fitness-tracker:workoutHistory",
-  pendingSync: "fitness-tracker-pending-sync"
+  pendingSync: "fitness-tracker-pending-sync",
+  bodyweightLogs: "fitness-tracker:bodyweightLogs"
 } as const;
 
 export const DEFAULT_LOCAL_CLIENT_ID = "local-client";
@@ -20,6 +21,7 @@ type StoredClientRecord = {
   exercises: unknown[];
   presets?: unknown[];
   workoutHistory: Record<string, unknown[]>;
+  bodyweightLogs?: unknown[];
 };
 
 type StoredClientsPayload = {
@@ -35,6 +37,7 @@ export type FitnessTrackerBackup = {
   exercises: unknown[];
   workoutHistory: unknown;
   presets: unknown[];
+  bodyweightLogs: unknown[];
   restByDate: Record<string, true>;
   finishedByDate: Record<string, true>;
 };
@@ -166,7 +169,8 @@ function emptyClientRecord(id: string, name: string): StoredClientRecord {
     name,
     exercises: [],
     presets: [],
-    workoutHistory: {}
+    workoutHistory: {},
+    bodyweightLogs: []
   };
 }
 
@@ -199,6 +203,7 @@ function safeClientsPayload(input: unknown): StoredClientsPayload {
       name,
       exercises: Array.isArray(record.exercises) ? record.exercises : [],
       presets: Array.isArray(record.presets) ? record.presets : [],
+      bodyweightLogs: Array.isArray(record.bodyweightLogs) ? record.bodyweightLogs : [],
       workoutHistory:
         record.workoutHistory && typeof record.workoutHistory === "object" && !Array.isArray(record.workoutHistory)
           ? (record.workoutHistory as Record<string, unknown[]>)
@@ -249,6 +254,7 @@ export function createBackupSnapshot(): FitnessTrackerBackup {
     exercises: Array.isArray(activeClient.exercises) ? activeClient.exercises : [],
     workoutHistory,
     presets: Array.isArray(activeClient.presets) ? activeClient.presets : [],
+    bodyweightLogs: Array.isArray(activeClient.bodyweightLogs) ? activeClient.bodyweightLogs : [],
     restByDate,
     finishedByDate
   };
@@ -286,6 +292,7 @@ export function restoreBackupSnapshot(input: unknown): { ok: boolean; reason?: s
   // Keep legacy keys in sync for backward compatibility with older data paths.
   saveJson(STORAGE_KEYS.exercises, Array.isArray(active.exercises) ? active.exercises : []);
   saveJson(STORAGE_KEYS.workoutHistory, active.workoutHistory ?? {});
+  saveJson(STORAGE_KEYS.bodyweightLogs, Array.isArray(active.bodyweightLogs) ? active.bodyweightLogs : []);
   return { ok: true };
 }
 
@@ -304,12 +311,14 @@ function migrateLegacySingleUserDataIfNeeded(): void {
 
   const legacyExercises = loadJson<unknown[]>(STORAGE_KEYS.exercises, []);
   const legacyWorkoutHistory = loadJson<Record<string, unknown[]>>(STORAGE_KEYS.workoutHistory, {});
+  const legacyBodyweightLogs = loadJson<unknown[]>(STORAGE_KEYS.bodyweightLogs, []);
   const payload = buildDefaultClientsPayload();
   payload.clients[DEFAULT_LOCAL_CLIENT_ID] = {
     id: DEFAULT_LOCAL_CLIENT_ID,
     name: DEFAULT_LOCAL_CLIENT_NAME,
     exercises: Array.isArray(legacyExercises) ? legacyExercises : [],
     presets: [],
+    bodyweightLogs: Array.isArray(legacyBodyweightLogs) ? legacyBodyweightLogs : [],
     workoutHistory:
       legacyWorkoutHistory && typeof legacyWorkoutHistory === "object" && !Array.isArray(legacyWorkoutHistory)
         ? legacyWorkoutHistory
@@ -372,6 +381,24 @@ export function saveClientWorkoutHistory(workoutHistory: unknown): void {
   persistClientsPayload(payload, activeClientId);
 }
 
+export function loadClientBodyweightLogs(): unknown[] {
+  migrateLegacySingleUserDataIfNeeded();
+  const { payload, activeClientId } = readClientsPayload();
+  persistClientsPayload(payload, activeClientId);
+  return payload.clients[activeClientId]?.bodyweightLogs ?? [];
+}
+
+export function saveClientBodyweightLogs(logs: unknown[]): void {
+  migrateLegacySingleUserDataIfNeeded();
+  const { payload, activeClientId } = readClientsPayload();
+  const current = payload.clients[activeClientId] ?? emptyClientRecord(activeClientId, DEFAULT_LOCAL_CLIENT_NAME);
+  payload.clients[activeClientId] = {
+    ...current,
+    bodyweightLogs: Array.isArray(logs) ? logs : []
+  };
+  persistClientsPayload(payload, activeClientId);
+}
+
 /** Removes both app keys. Usually not needed if state is cleared (effects save `[]` / `{}`). */
 export function removeAllFitnessKeys(): void {
   if (typeof window === "undefined") return;
@@ -380,6 +407,7 @@ export function removeAllFitnessKeys(): void {
     window.localStorage.removeItem(STORAGE_KEYS.activeClientId);
     window.localStorage.removeItem(STORAGE_KEYS.exercises);
     window.localStorage.removeItem(STORAGE_KEYS.workoutHistory);
+    window.localStorage.removeItem(STORAGE_KEYS.bodyweightLogs);
   } catch {
     // ignore
   }

@@ -11,10 +11,12 @@ import { EXERCISES_BY_LETTER, getMasterExerciseByName } from "@/lib/exercises";
 import { findExerciseWithSameNameAndConfig } from "@/lib/exerciseConfigMatch";
 import { exerciseDuplicateKey, exerciseNameKey } from "@/lib/exerciseNameKey";
 import { useExercises, type Exercise } from "@/app/exercises-provider";
+import { useBodyweight } from "@/app/bodyweight-provider";
 import { type WorkoutHistoryEntry, useWorkoutHistory } from "@/app/workout-history-provider";
 import { WorkoutDateNavigation } from "@/app/workout/WorkoutDateNavigation";
 import { isYmdInWorkoutRange } from "@/app/workout/workoutDateNavUtils";
 import { supabase } from "@/lib/supabaseClient";
+import { isSundayYmd, toSundayYmd, type BodyweightUnit } from "@/lib/bodyweight";
 import {
   canSubmitWorkoutInputs,
   hasSubmittableSnapshotSets,
@@ -83,6 +85,7 @@ type ExerciseSetupForm = {
 const FIRST_WORKOUT_GUIDE_COMPLETED_KEY = "hasCompletedFirstWorkoutGuide";
 const FIRST_WORKOUT_GUIDE_STEP_KEY = "firstWorkoutGuideStep";
 const FIRST_WORKOUT_GUIDE_MAX_STEP = 5;
+const WEEKLY_BODYWEIGHT_SKIP_PREFIX = "weeklyBodyweightSkip:";
 
 function clampFirstWorkoutGuideStep(value: number): number {
   if (!Number.isFinite(value)) return 1;
@@ -640,6 +643,12 @@ export default function WorkoutPage() {
     updateWorkoutEntry,
     clearWorkoutHistory
   } = useWorkoutHistory();
+  const {
+    getLatestBodyweight,
+    getEffectiveBodyweightForDate,
+    listBodyweightLogs,
+    upsertWeeklyBodyweight
+  } = useBodyweight();
   const [selectedId, setSelectedId] = useState("");
   const [selectedWorkoutDate, setSelectedWorkoutDate] = useState(getLocalDateString);
   /** In day overview: `true` = day list + week; `false` = full calendar for two-step day selection. */
@@ -677,6 +686,9 @@ export default function WorkoutPage() {
   const [hasCompletedFirstWorkoutGuide, setHasCompletedFirstWorkoutGuide] = useState(true);
   const [firstWorkoutGuideStep, setFirstWorkoutGuideStep] = useState(1);
   const [isFirstWorkoutGuideReady, setIsFirstWorkoutGuideReady] = useState(false);
+  const [weeklyBodyweightInput, setWeeklyBodyweightInput] = useState("");
+  const [weeklyBodyweightUnit, setWeeklyBodyweightUnit] = useState<BodyweightUnit>("lbs");
+  const [weeklyBodyweightDismissed, setWeeklyBodyweightDismissed] = useState(false);
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -729,6 +741,22 @@ export default function WorkoutPage() {
       selectedExercise.foundation
     );
 
+  const allBodyweightLogs = useMemo(() => listBodyweightLogs(), [listBodyweightLogs]);
+  const selectedDateSunday = useMemo(() => toSundayYmd(selectedWorkoutDate), [selectedWorkoutDate]);
+  const currentWeekBodyweightLog = useMemo(
+    () => allBodyweightLogs.find((log) => log.weekDate === selectedDateSunday) ?? null,
+    [allBodyweightLogs, selectedDateSunday]
+  );
+  const effectiveBodyweightForSelectedDate = useMemo(
+    () => getEffectiveBodyweightForDate(selectedWorkoutDate),
+    [getEffectiveBodyweightForDate, selectedWorkoutDate]
+  );
+  const shouldShowWeeklyBodyweightPrompt =
+    logFlowPhase === "day_overview" &&
+    isSundayYmd(selectedWorkoutDate) &&
+    currentWeekBodyweightLog === null &&
+    !weeklyBodyweightDismissed;
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const completedRaw = window.localStorage.getItem(FIRST_WORKOUT_GUIDE_COMPLETED_KEY);
@@ -737,6 +765,31 @@ export default function WorkoutPage() {
     setFirstWorkoutGuideStep(clampFirstWorkoutGuideStep(stepRaw));
     setIsFirstWorkoutGuideReady(true);
   }, []);
+
+  useEffect(() => {
+    const latest = getLatestBodyweight();
+    if (!latest) return;
+    setWeeklyBodyweightUnit(latest.unit);
+  }, [getLatestBodyweight]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isSundayYmd(selectedWorkoutDate)) {
+      setWeeklyBodyweightDismissed(false);
+      return;
+    }
+    const skipKey = `${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`;
+    setWeeklyBodyweightDismissed(window.localStorage.getItem(skipKey) === "true");
+  }, [selectedDateSunday, selectedWorkoutDate]);
+
+  useEffect(() => {
+    if (currentWeekBodyweightLog) {
+      setWeeklyBodyweightInput(String(currentWeekBodyweightLog.bodyweight));
+      setWeeklyBodyweightUnit(currentWeekBodyweightLog.unit);
+      return;
+    }
+    setWeeklyBodyweightInput("");
+  }, [currentWeekBodyweightLog]);
 
   const completeFirstWorkoutGuide = () => {
     setHasCompletedFirstWorkoutGuide(true);
@@ -1739,6 +1792,29 @@ export default function WorkoutPage() {
     exitDayOverviewSelectMode();
   };
 
+  const handleSkipWeeklyBodyweight = () => {
+    setWeeklyBodyweightDismissed(true);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(`${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`, "true");
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+
+  const handleSaveWeeklyBodyweight = async () => {
+    const parsed = Number(weeklyBodyweightInput);
+    if (!Number.isFinite(parsed) || parsed <= 0 || !selectedDateSunday) return;
+    await upsertWeeklyBodyweight(selectedDateSunday, parsed, weeklyBodyweightUnit);
+    setWeeklyBodyweightDismissed(true);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(`${WEEKLY_BODYWEIGHT_SKIP_PREFIX}${selectedDateSunday}`, "true");
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+
   const handleToggleRestDay = (checked: boolean) => {
     if (checked && workoutsForSelectedDate.length > 0) {
       setRestDayToggleWarning("This day already has logged workouts and cannot be marked as rest.");
@@ -1924,6 +2000,63 @@ export default function WorkoutPage() {
                       {selectedDateIsFinished ? (
                         <p className="rounded-md border border-slate-300 bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-800">
                           This day is finished. Existing workouts can still be edited, but adding new workouts is disabled.
+                        </p>
+                      ) : null}
+                      {shouldShowWeeklyBodyweightPrompt ? (
+                        <div className="rounded-md border border-slate-200 bg-white px-3 py-2.5">
+                          <p className="text-sm font-medium text-slate-800">
+                            Weekly check-in: log your bodyweight?
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Optional. This helps future performance context and won’t block workouts.
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.1}
+                              value={weeklyBodyweightInput}
+                              onChange={(event) => setWeeklyBodyweightInput(event.target.value)}
+                              placeholder="Bodyweight"
+                              className="w-32 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none ring-slate-300 focus:ring-2"
+                            />
+                            <select
+                              value={weeklyBodyweightUnit}
+                              onChange={(event) =>
+                                setWeeklyBodyweightUnit(event.target.value as BodyweightUnit)
+                              }
+                              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none ring-slate-300 focus:ring-2"
+                            >
+                              <option value="lbs">lbs</option>
+                              <option value="kg">kg</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleSaveWeeklyBodyweight();
+                              }}
+                              disabled={Number(weeklyBodyweightInput) <= 0}
+                              className={actionButtonClass("secondary", "disabled:cursor-not-allowed")}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSkipWeeklyBodyweight}
+                              className={actionButtonClasses.secondary}
+                            >
+                              Skip for now
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {effectiveBodyweightForSelectedDate ? (
+                        <p className="text-xs text-slate-500">
+                          Effective bodyweight for this date:{" "}
+                          <span className="font-medium text-slate-700">
+                            {formatOneDecimal(effectiveBodyweightForSelectedDate.bodyweight)}{" "}
+                            {effectiveBodyweightForSelectedDate.unit}
+                          </span>
                         </p>
                       ) : null}
                       <div className="flex items-center justify-between">
