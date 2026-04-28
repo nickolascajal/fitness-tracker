@@ -647,6 +647,7 @@ export default function WorkoutPage() {
       if (seen.has(key)) continue;
       seen.add(key);
       const configured = exercises.find((exercise) => exercise.id === entry.exerciseId);
+      if (configured?.isArchived === true) continue;
       list.push({ name: entry.exerciseName, exerciseId: entry.exerciseId, configured });
       if (list.length >= 8) break;
     }
@@ -660,7 +661,7 @@ export default function WorkoutPage() {
   }, [recentExercises, exerciseSearchQuery]);
 
   const userCreatedExercises = useMemo(
-    () => exercises.filter((exercise) => exercise.isUserCreated === true),
+    () => exercises.filter((exercise) => exercise.isUserCreated === true && exercise.isArchived !== true),
     [exercises]
   );
 
@@ -870,7 +871,9 @@ export default function WorkoutPage() {
           ? "weight"
           : (getMasterExerciseByName(name)?.type ?? "weight");
     const existing = findExerciseWithSameNameAndConfig(
-      exercises.filter((exercise) => exercise.type === resolvedExerciseType),
+      exercises.filter(
+        (exercise) => exercise.type === resolvedExerciseType && exercise.isArchived !== true
+      ),
       name,
       config
     );
@@ -1501,25 +1504,11 @@ export default function WorkoutPage() {
     !hasCompletedFirstWorkoutGuide &&
     phaseDrivenGuideStep === 5;
   const isFirstWorkoutGuideActive =
-    isFirstWorkoutGuideReady &&
-    !hasCompletedFirstWorkoutGuide &&
-    (!hasLoggedWorkoutHistory || showStep5Tooltip);
+    isFirstWorkoutGuideReady && !hasCompletedFirstWorkoutGuide;
   const showStep1Tooltip = isFirstWorkoutGuideActive && phaseDrivenGuideStep === 1;
   const showStep2Tooltip = isFirstWorkoutGuideActive && phaseDrivenGuideStep === 2;
   const showStep3Tooltip = isFirstWorkoutGuideActive && phaseDrivenGuideStep === 3;
   const showStep4Tooltip = isFirstWorkoutGuideActive && phaseDrivenGuideStep === 4;
-
-  useEffect(() => {
-    if (!isFirstWorkoutGuideReady || hasCompletedFirstWorkoutGuide) return;
-    if (!hasLoggedWorkoutHistory) return;
-    if (showStep5Tooltip) return;
-    completeFirstWorkoutGuide();
-  }, [
-    hasCompletedFirstWorkoutGuide,
-    hasLoggedWorkoutHistory,
-    isFirstWorkoutGuideReady,
-    showStep5Tooltip
-  ]);
 
   useEffect(() => {
     if (logFlowPhase !== "day_overview") {
@@ -1838,7 +1827,11 @@ export default function WorkoutPage() {
                             {showStep1Tooltip ? (
                               <div className="absolute left-1/2 top-full z-10 mt-2 w-72 -translate-x-1/2">
                                 <FirstWorkoutGuideTooltip
-                                  copy="Start here — log your first workout."
+                                  copy={
+                                    hasLoggedWorkoutHistory
+                                      ? "Quick walkthrough — here’s how your workouts are organized."
+                                      : "Start here — log your first workout."
+                                  }
                                   onSkip={completeFirstWorkoutGuide}
                                   anchored
                                 />

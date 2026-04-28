@@ -23,6 +23,7 @@ import {
 } from "@/lib/pendingSync";
 import { getUserForPendingSync } from "@/lib/pendingSyncAuth";
 import { supabase } from "@/lib/supabaseClient";
+import { exerciseDuplicateKey } from "@/lib/exerciseNameKey";
 
 export type ExerciseType = "weight" | "bodyweight" | "time";
 
@@ -40,6 +41,8 @@ export type Exercise = {
   trackRpe: boolean;
   /** True when user manually authored this exercise (not from master library selection). */
   isUserCreated?: boolean;
+  /** Soft-hide custom exercise from active pickers without deleting historical references. */
+  isArchived?: boolean;
 };
 
 export type WorkoutPresetExercise = {
@@ -71,6 +74,8 @@ type ExercisesContextValue = {
   addPreset: (data: Omit<WorkoutPreset, "id" | "createdAt">) => WorkoutPreset;
   updatePreset: (presetId: string, updater: (preset: WorkoutPreset) => WorkoutPreset) => void;
   removePresets: (presetIds: string[]) => void;
+  archiveExercises: (exerciseIds: string[]) => void;
+  deleteExercisesPermanently: (exerciseIds: string[]) => void;
   clearPresets: () => void;
   clearExercises: () => void;
 };
@@ -98,7 +103,8 @@ function safeExerciseList(data: unknown): Exercise[] {
     unit: item.unit === "kg" ? "kg" : "lbs",
     trackRir: item.trackRir === true,
     trackRpe: item.trackRpe === true,
-    isUserCreated: item.isUserCreated === true
+    isUserCreated: item.isUserCreated === true,
+    isArchived: item.isArchived === true
   }));
 }
 
@@ -193,7 +199,8 @@ function exerciseInsertPayloadForLog(exercise: Exercise) {
       foundation: exercise.foundation,
       trackRir: exercise.trackRir,
       trackRpe: exercise.trackRpe,
-      isUserCreated: exercise.isUserCreated === true
+        isUserCreated: exercise.isUserCreated === true,
+        isArchived: exercise.isArchived === true
     }
   };
 }
@@ -434,6 +441,7 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
       id: crypto.randomUUID(),
       type: data.type ?? "weight",
       foundation: Number.isFinite(data.foundation) ? Number(data.foundation) : 0,
+      isArchived: false,
       ...data
     };
     setExercises((previous) => [exercise, ...previous]);
@@ -519,6 +527,121 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
 
     return exercise;
   }, [enqueuePendingSyncItem]);
+
+  const syncExerciseUpdateToSupabase = useCallback(
+    async (exercise: Exercise) => {
+      const pendingItem = {
+        type: "exercise" as const,
+        action: "update" as const,
+        payload: { exerciseId: exercise.id, exercise }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        enqueuePendingSyncItem(pendingItem);
+        return;
+      }
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser();
+        if (userError && isOfflineAuthFailure(userError)) {
+          enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        if (!user) return;
+        const { data: rows, error: lookupError } = await supabase
+          .from("exercises")
+          .select("id,data")
+          .eq("user_id", user.id);
+        if (lookupError) {
+          enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        const matched = ((rows as SupabaseJsonRow[] | null) ?? []).find((row) => {
+          let payload: unknown = row.data;
+          if (typeof payload === "string") {
+            try {
+              payload = JSON.parse(payload);
+            } catch {
+              payload = null;
+            }
+          }
+          if (!payload || typeof payload !== "object") return false;
+          return (payload as { id?: unknown }).id === exercise.id;
+        });
+        if (!matched?.id) {
+          enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        const { error } = await supabase
+          .from("exercises")
+          .update({ data: exercise })
+          .eq("id", matched.id)
+          .eq("user_id", user.id);
+        if (error) enqueuePendingSyncItem(pendingItem);
+      } catch {
+        enqueuePendingSyncItem(pendingItem);
+      }
+    },
+    [enqueuePendingSyncItem]
+  );
+
+  const syncExerciseDeleteToSupabase = useCallback(
+    async (exerciseId: string) => {
+      if (!exerciseId) return;
+      const removedPendingInsert = removePendingInsertForEntity("exercise", exerciseId);
+      const pendingItem = {
+        type: "exercise" as const,
+        action: "delete" as const,
+        payload: { exerciseId }
+      };
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        if (!removedPendingInsert) enqueuePendingSyncItem(pendingItem);
+        return;
+      }
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser();
+        if (userError && isOfflineAuthFailure(userError)) {
+          if (!removedPendingInsert) enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        if (!user) return;
+        const { data: rows, error: lookupError } = await supabase
+          .from("exercises")
+          .select("id,data")
+          .eq("user_id", user.id);
+        if (lookupError) {
+          if (!removedPendingInsert) enqueuePendingSyncItem(pendingItem);
+          return;
+        }
+        const matched = ((rows as SupabaseJsonRow[] | null) ?? []).find((row) => {
+          let payload: unknown = row.data;
+          if (typeof payload === "string") {
+            try {
+              payload = JSON.parse(payload);
+            } catch {
+              payload = null;
+            }
+          }
+          if (!payload || typeof payload !== "object") return false;
+          return (payload as { id?: unknown }).id === exerciseId;
+        });
+        if (!matched?.id) return;
+        const { error } = await supabase
+          .from("exercises")
+          .delete()
+          .eq("id", matched.id)
+          .eq("user_id", user.id);
+        if (error && !removedPendingInsert) enqueuePendingSyncItem(pendingItem);
+      } catch {
+        if (!removedPendingInsert) enqueuePendingSyncItem(pendingItem);
+      }
+    },
+    [enqueuePendingSyncItem]
+  );
 
   const addPreset = useCallback((data: Omit<WorkoutPreset, "id" | "createdAt">): WorkoutPreset => {
     const preset: WorkoutPreset = {
@@ -725,6 +848,73 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
     }
   }, [enqueuePendingSyncItem]);
 
+  const archiveExercises = useCallback(
+    (exerciseIds: string[]) => {
+      if (exerciseIds.length === 0) return;
+      const ids = new Set(exerciseIds);
+      const toSync: Exercise[] = [];
+      setExercises((previous) =>
+        previous.map((exercise) => {
+          if (!ids.has(exercise.id) || exercise.isUserCreated !== true || exercise.isArchived === true) {
+            return exercise;
+          }
+          const next: Exercise = { ...exercise, isArchived: true };
+          toSync.push(next);
+          return next;
+        })
+      );
+      for (const exercise of toSync) {
+        void syncExerciseUpdateToSupabase(exercise);
+      }
+    },
+    [syncExerciseUpdateToSupabase]
+  );
+
+  const deleteExercisesPermanently = useCallback(
+    (exerciseIds: string[]) => {
+      if (exerciseIds.length === 0) return;
+      const ids = new Set(exerciseIds);
+      const deletedExercises: Exercise[] = [];
+      setExercises((previous) =>
+        previous.filter((exercise) => {
+          const shouldDelete = ids.has(exercise.id) && exercise.isUserCreated === true;
+          if (shouldDelete) deletedExercises.push(exercise);
+          return !shouldDelete;
+        })
+      );
+      if (deletedExercises.length === 0) return;
+      const deletedKeys = new Set(
+        deletedExercises.map((exercise) =>
+          `${exerciseDuplicateKey(exercise.name)}::${exercise.targetReps}::${exercise.setCount}::${exercise.increment}::${exercise.unit}::${exercise.trackRir ? 1 : 0}::${exercise.trackRpe ? 1 : 0}`
+        )
+      );
+      const changedPresets: WorkoutPreset[] = [];
+      setPresets((previous) =>
+        previous.map((preset) => {
+          const nextExercises = preset.exercises.filter((exercise) => {
+            const key = `${exerciseDuplicateKey(exercise.name)}::${exercise.targetReps}::${exercise.setCount}::${exercise.increment}::${exercise.unit}::${exercise.trackRir ? 1 : 0}::${exercise.trackRpe ? 1 : 0}`;
+            return !deletedKeys.has(key);
+          });
+          if (nextExercises.length === preset.exercises.length) return preset;
+          const nextPreset = { ...preset, exercises: nextExercises };
+          changedPresets.push(nextPreset);
+          return nextPreset;
+        })
+      );
+      for (const preset of changedPresets) {
+        enqueuePendingSyncItem({
+          type: "preset",
+          action: "update",
+          payload: { presetId: preset.id, preset }
+        });
+      }
+      for (const exercise of deletedExercises) {
+        void syncExerciseDeleteToSupabase(exercise.id);
+      }
+    },
+    [enqueuePendingSyncItem, syncExerciseDeleteToSupabase]
+  );
+
   const clearExercises = useCallback(() => {
     setExercises([]);
 
@@ -847,6 +1037,8 @@ export function ExercisesProvider({ children }: { children: ReactNode }) {
         addPreset,
         updatePreset,
         removePresets,
+        archiveExercises,
+        deleteExercisesPermanently,
         clearPresets,
         clearExercises
       }}

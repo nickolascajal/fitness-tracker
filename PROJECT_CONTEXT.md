@@ -34,6 +34,9 @@ Core idea:
   * weight increment
   * weight unit (`lbs` or `kg`)
   * optional tracking toggles: `Track RIR`, `Track RPE`
+* Created Exercises lifecycle:
+  * default cleanup path is **Archive** (hides custom exercises from active pickers/lists but keeps historical workout references intact)
+  * advanced **Delete permanently** path removes the custom exercise config, removes matching preset exercise rows, and removes workout history entries tied to that `exerciseId` (user-scoped, irreversible)
 * Forms that configure exercises (workout exercise setup, day-overview edit configuration, library created exercises and presets, admin “Create Preset for User,” and admin planned/historical inputs where those metrics appear) use **explicit labels** plus small **`?` help popovers** (`components/help-tooltip.tsx`, shared copy `EXERCISE_CONFIG_HELP`) for fields such as sets, target reps/time, increment, unit, and RIR/RPE/TIR—without changing stored values or progression logic.
 * Manual exercise creation defaults (library + custom setup):
   * Target Reps = `8`
@@ -112,8 +115,8 @@ The old standalone `Create Exercise` tab/page is removed from navigation; `/exer
 Library beta onboarding callouts (`app/library/page.tsx`, localStorage-backed):
 
 * **Used Exercises tab:** shows a contextual guide card with `Got it` / `Skip guide`; dismissal persisted as `hasSeenUsedExercisesGuide`.
-* **Created Exercises tab:** shows a contextual guide card with `Skip guide`; completion persisted as `hasCompletedCreatedExercisesGuide`, and it auto-completes when the user creates an exercise from this tab’s **Create New Exercise** flow.
-* **Saved Workout Presets tab:** shows a contextual guide card with `Skip guide`; completion persisted as `hasCompletedPresetsGuide`, and it auto-completes when a new preset is successfully saved.
+* **Created Exercises tab:** shows a contextual guide card with `Skip guide`; completion persisted as `hasCompletedCreatedExercisesGuide`. Marking complete also happens when the user saves a new exercise from **Create New Exercise** (explicit user action).
+* **Saved Workout Presets tab:** shows a contextual guide card with `Skip guide`; completion persisted as `hasCompletedPresetsGuide`. Marking complete also happens when the user saves a new preset (explicit user action).
 
 Manual creation duplicate rule:
 
@@ -125,15 +128,15 @@ Manual creation duplicate rule:
 ### Workout Logging
 
 * **No library exercise is required** to open `/workout`: users can use the full flow with the **master exercise list** (and presets) even when `exercises` is empty; the old **“Create at least one exercise first…”** block is removed.
-* **First-workout guide (`app/workout/page.tsx`):** brand-new users (zero logged workouts) see a lightweight, phase-driven 5-step guide with subtle in-flow callouts and no modal:
-  1. Day overview near **Log First Workout**: `Start here — log your first workout.`
+* **First-workout guide (`app/workout/page.tsx`):** a lightweight, phase-driven 5-step guide with subtle in-flow callouts and no modal. Completion is **user-dismiss based only** (not inferred from existing workout history), so accounts with imported/admin-assigned workouts still see the guide until dismissed—supporting migrated users and admin-created accounts.
+  1. Day overview near **Log First Workout**: if the account already has logged workouts: `Quick walkthrough — here’s how your workouts are organized.` Otherwise: `Start here — log your first workout.`
   2. Exercise selection: `Choose the exercise you’re doing, or create one if you don’t see it.`
   3. Exercise setup/config: `Adjust sets, target reps, and weight increment here. If you’re unsure, leave the defaults.`
   4. Workout input: `Enter your weight and reps for each set, then press Submit Workout when you’re done.`
   5. Post-submit dashboard: `This dashboard shows your performance numbers, recommendation, and comparison to last time.`
   - Steps 1–4 show only `Skip guide`; step 5 (dashboard) shows `Done` + `Skip guide`.
   - Guide text auto-follows the user’s current phase (no per-step confirmation clicks required), while `firstWorkoutGuideStep` is still persisted for diagnostics/state continuity.
-  - `Skip guide`, `Done` on step 5, or leaving the dashboard after the first completed workout marks completion (`hasCompletedFirstWorkoutGuide = true`), so the guide no longer appears.
+  - **`Skip guide`** or **`Done`** on step 5 sets `hasCompletedFirstWorkoutGuide = true` (persisted); existing workout history does **not** auto-complete the guide.
 * **Exercise-selection first-time helper (`app/workout/page.tsx`):** in `Exercise selection`, users with **no logged workouts**, **no saved presets**, and **no created exercises** see helper text: `Your saved exercises and presets will appear here after your first workout.`
 * **Workout date (day list + week strip, `isDayExercisesListOpen` true):** the **week strip** renders **first**; the **workout / selected day** line and **Choose on calendar** sit **below** it for a less cramped mobile layout.
 * **Set input grid (pre-submit + post-submit edit):** column templates use **tighter `max-md` tracks**; parents use **`max-md:overflow-x-auto`** with a **minimum table width** so when **Weight, Reps, RIR, and RPE** (or time equivalents) are all shown, the row can **scroll horizontally** on narrow viewports instead of breaking. Header copy is **shortened** on small screens (e.g. `Wt (kg)`, `Reps (T 8)`, `Time (T 45s)`) while **preserving unit and target context**.

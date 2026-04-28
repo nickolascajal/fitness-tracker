@@ -88,14 +88,27 @@ function LibraryGuideCallout({
 
 export default function LibraryPage() {
   const router = useRouter();
-  const { exercises, presets, addExercise, addPreset, updatePreset, removePresets } = useExercises();
-  const { historyByExerciseId } = useWorkoutHistory();
+  const {
+    exercises,
+    presets,
+    addExercise,
+    addPreset,
+    updatePreset,
+    removePresets,
+    archiveExercises,
+    deleteExercisesPermanently
+  } = useExercises();
+  const { historyByExerciseId, removeWorkoutsByExerciseIds } = useWorkoutHistory();
   const [authChecked, setAuthChecked] = useState(false);
   const [allowed, setAllowed] = useState(false);
   const [tab, setTab] = useState<LibraryTab>("used");
   const [showCreateExercise, setShowCreateExercise] = useState(false);
   const [form, setForm] = useState<ExerciseForm>(initialForm);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [createdSelectionMode, setCreatedSelectionMode] = useState(false);
+  const [createdSelectedIds, setCreatedSelectedIds] = useState<Set<string>>(() => new Set());
+  const [createdArchiveConfirmOpen, setCreatedArchiveConfirmOpen] = useState(false);
+  const [createdMenuExerciseId, setCreatedMenuExerciseId] = useState<string | null>(null);
   const [presetStep, setPresetStep] = useState<PresetBuilderStep>(1);
   const [presetPanelMode, setPresetPanelMode] = useState<PresetPanelMode>("list");
   const [presetName, setPresetName] = useState("");
@@ -158,6 +171,13 @@ export default function LibraryPage() {
     setHasCompletedPresetsGuide(window.localStorage.getItem(PRESETS_GUIDE_KEY) === "true");
     setIsLibraryGuideReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!createdMenuExerciseId) return;
+    const close = () => setCreatedMenuExerciseId(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [createdMenuExerciseId]);
 
   const resetPresetBuilder = () => {
     setPresetPanelMode("list");
@@ -284,7 +304,7 @@ export default function LibraryPage() {
   }, [historyByExerciseId, exercises]);
 
   const createdExercises = useMemo(
-    () => exercises.filter((e) => e.isUserCreated === true),
+    () => exercises.filter((e) => e.isUserCreated === true && e.isArchived !== true),
     [exercises]
   );
 
@@ -312,6 +332,43 @@ export default function LibraryPage() {
     setForm(initialForm);
     setShowCreateExercise(false);
     completeCreatedExercisesGuide();
+  };
+
+  const exitCreatedSelectionMode = () => {
+    setCreatedSelectionMode(false);
+    setCreatedSelectedIds(new Set());
+    setCreatedArchiveConfirmOpen(false);
+  };
+
+  const toggleCreatedSelection = (exerciseId: string, checked: boolean) => {
+    setCreatedSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (checked) next.add(exerciseId);
+      else next.delete(exerciseId);
+      return next;
+    });
+  };
+
+  const confirmArchiveSelectedCreatedExercises = () => {
+    const ids = Array.from(createdSelectedIds);
+    if (ids.length === 0) return;
+    archiveExercises(ids);
+    exitCreatedSelectionMode();
+  };
+
+  const archiveSingleCreatedExercise = (exerciseId: string) => {
+    archiveExercises([exerciseId]);
+    setCreatedMenuExerciseId(null);
+  };
+
+  const deleteSingleCreatedExercisePermanently = (exerciseId: string) => {
+    const confirmed = window.confirm(
+      "Delete this exercise everywhere? This will remove it from presets and workout history. This cannot be undone."
+    );
+    if (!confirmed) return;
+    removeWorkoutsByExerciseIds([exerciseId]);
+    deleteExercisesPermanently([exerciseId]);
+    setCreatedMenuExerciseId(null);
   };
 
   const handleAddPresetExercise = (event: FormEvent<HTMLFormElement>) => {
@@ -564,16 +621,50 @@ export default function LibraryPage() {
         <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Created Exercises</h2>
-            <button
-              type="button"
-              onClick={() => {
-                setNameError(null);
-                setShowCreateExercise((v) => !v);
-              }}
-              className={actionButtonClasses.primary}
-            >
-              Create New Exercise
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!createdSelectionMode && createdExercises.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreatedSelectionMode(true);
+                    setCreatedSelectedIds(new Set());
+                    setCreatedArchiveConfirmOpen(false);
+                  }}
+                  className={actionButtonClasses.secondary}
+                >
+                  Select
+                </button>
+              ) : null}
+              {createdSelectionMode ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={createdSelectedIds.size === 0}
+                    onClick={() => setCreatedArchiveConfirmOpen(true)}
+                    className={actionButtonClasses.primary}
+                  >
+                    Archive selected
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exitCreatedSelectionMode}
+                    className={actionButtonClasses.secondary}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setNameError(null);
+                  setShowCreateExercise((v) => !v);
+                }}
+                className={actionButtonClasses.primary}
+              >
+                Create New Exercise
+              </button>
+            </div>
           </div>
           {isLibraryGuideReady && !hasCompletedCreatedExercisesGuide ? (
             <LibraryGuideCallout
@@ -587,15 +678,94 @@ export default function LibraryPage() {
             <ul className="space-y-2">
               {createdExercises.map((exercise) => (
                 <li key={exercise.id} className="rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm">
-                  <p className="font-medium text-slate-900">{exercise.name}</p>
-                  <p className="text-slate-600">
-                    {exercise.setCount} sets x {exercise.targetReps} reps · +{exercise.increment}{" "}
-                    {exercise.unit}
-                  </p>
+                  <div className="flex items-start gap-2">
+                    {createdSelectionMode ? (
+                      <label className="mt-0.5 flex items-center">
+                        <span className="sr-only">Select {exercise.name}</span>
+                        <input
+                          type="checkbox"
+                          checked={createdSelectedIds.has(exercise.id)}
+                          onChange={(event) =>
+                            toggleCreatedSelection(exercise.id, event.target.checked)
+                          }
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                        />
+                      </label>
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-900">{exercise.name}</p>
+                      <p className="text-slate-600">
+                        {exercise.setCount} sets x {exercise.targetReps} reps · +{exercise.increment}{" "}
+                        {exercise.unit}
+                      </p>
+                    </div>
+                    {!createdSelectionMode ? (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setCreatedMenuExerciseId((previous) =>
+                              previous === exercise.id ? null : exercise.id
+                            );
+                          }}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                          aria-label={`More options for ${exercise.name}`}
+                        >
+                          ⋮
+                        </button>
+                        {createdMenuExerciseId === exercise.id ? (
+                          <div
+                            className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => archiveSingleCreatedExercise(exercise.id)}
+                              className="w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSingleCreatedExercisePermanently(exercise.id)}
+                              className="w-full rounded px-2 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-50"
+                            >
+                              Delete permanently
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ul>
           )}
+          {createdArchiveConfirmOpen && createdSelectionMode ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50/90 px-3 py-3 text-sm text-amber-950">
+              <p>
+                Archive selected exercises? They will be removed from active exercise lists but your
+                workout history will remain.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={confirmArchiveSelectedCreatedExercises}
+                  className={actionButtonClasses.primary}
+                >
+                  Yes, archive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreatedArchiveConfirmOpen(false)}
+                  className={actionButtonClasses.secondary}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
           {showCreateExercise ? (
             <form onSubmit={handleCreateExercise} className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="block space-y-1">

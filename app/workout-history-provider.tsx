@@ -72,6 +72,7 @@ type WorkoutHistoryContextValue = {
     submittedAt: string,
     updater: (entry: WorkoutHistoryEntry) => WorkoutHistoryEntry
   ) => void;
+  removeWorkoutsByExerciseIds: (exerciseIds: string[]) => void;
   clearWorkoutHistory: () => void;
 };
 
@@ -907,6 +908,31 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  const removeWorkoutsByExerciseIds = useCallback(
+    (exerciseIds: string[]) => {
+      if (exerciseIds.length === 0) return;
+      const ids = new Set(exerciseIds);
+      const removedWorkoutIds: string[] = [];
+      setEntriesByDate((previous) => {
+        const next: WorkoutHistoryByDate = {};
+        for (const [dateKey, entries] of Object.entries(previous)) {
+          const kept = entries.filter((entry) => {
+            const shouldRemove = ids.has(entry.exerciseId);
+            if (shouldRemove) removedWorkoutIds.push(entry.workoutId);
+            return !shouldRemove;
+          });
+          if (kept.length > 0) next[dateKey] = kept;
+        }
+        return next;
+      });
+      if (removedWorkoutIds.length === 0) return;
+      for (const workoutId of removedWorkoutIds) {
+        void syncDeletedWorkoutToSupabase(workoutId);
+      }
+    },
+    [syncDeletedWorkoutToSupabase]
+  );
+
   return (
     <WorkoutHistoryContext.Provider
       value={{
@@ -922,6 +948,7 @@ export function WorkoutHistoryProvider({ children }: { children: ReactNode }) {
         removeWorkoutsFromDate,
         updateWorkoutEntry,
         updateLatestWorkout,
+        removeWorkoutsByExerciseIds,
         clearWorkoutHistory
       }}
     >
