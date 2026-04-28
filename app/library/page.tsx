@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ChangeEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useExercises, type WorkoutPreset } from "@/app/exercises-provider";
 import { useWorkoutHistory } from "@/app/workout-history-provider";
@@ -9,6 +9,11 @@ import { exerciseDuplicateKey } from "@/lib/exerciseNameKey";
 import { createBackupSnapshot, restoreBackupSnapshot, validateBackupSnapshot } from "@/lib/storage";
 import { supabase } from "@/lib/supabaseClient";
 import { ActionButton, actionButtonClass, actionButtonClasses } from "@/components/action-button";
+import {
+  EXERCISE_CONFIG_HELP,
+  FieldLabelHelp,
+  TrackCheckboxRow
+} from "@/components/help-tooltip";
 
 type LibraryTab = "used" | "created" | "presets";
 
@@ -120,6 +125,11 @@ export default function LibraryPage() {
   const [hasSeenUsedExercisesGuide, setHasSeenUsedExercisesGuide] = useState(false);
   const [hasCompletedCreatedExercisesGuide, setHasCompletedCreatedExercisesGuide] = useState(false);
   const [hasCompletedPresetsGuide, setHasCompletedPresetsGuide] = useState(false);
+
+  const createdExerciseCfgId = useId();
+  const presetCreateCfgId = useId();
+  const presetEditAddCfgId = useId();
+  const presetEditSelectedCfgId = useId();
 
   useEffect(() => {
     const guardRoute = async () => {
@@ -606,40 +616,68 @@ export default function LibraryPage() {
                 </p>
               ) : null}
               <div className="grid gap-2 sm:grid-cols-4">
-                <input
-                  type="number"
-                  min={1}
-                  value={form.setCount}
-                  onChange={(e) => setForm((prev) => ({ ...prev, setCount: Number(e.target.value) }))}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                  aria-label="Set count"
-                />
-                <input
-                  type="number"
-                  min={1}
-                  value={form.targetReps}
-                  onChange={(e) => setForm((prev) => ({ ...prev, targetReps: Number(e.target.value) }))}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                  aria-label="Target reps"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={form.increment}
-                  onChange={(e) => setForm((prev) => ({ ...prev, increment: Number(e.target.value) }))}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                  aria-label="Increment"
-                />
-                <select
-                  value={form.unit}
-                  onChange={(e) => setForm((prev) => ({ ...prev, unit: e.target.value as "lbs" | "kg" }))}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                  aria-label="Unit"
-                >
-                  <option value="lbs">lbs</option>
-                  <option value="kg">kg</option>
-                </select>
+                <div className="space-y-1">
+                  <FieldLabelHelp
+                    htmlFor={`${createdExerciseCfgId}-sets`}
+                    label="Sets"
+                    helpText={EXERCISE_CONFIG_HELP.sets}
+                  />
+                  <input
+                    id={`${createdExerciseCfgId}-sets`}
+                    type="number"
+                    min={1}
+                    value={form.setCount}
+                    onChange={(e) => setForm((prev) => ({ ...prev, setCount: Number(e.target.value) }))}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <FieldLabelHelp
+                    htmlFor={`${createdExerciseCfgId}-target`}
+                    label="Target reps"
+                    helpText={EXERCISE_CONFIG_HELP.targetReps}
+                  />
+                  <input
+                    id={`${createdExerciseCfgId}-target`}
+                    type="number"
+                    min={1}
+                    value={form.targetReps}
+                    onChange={(e) => setForm((prev) => ({ ...prev, targetReps: Number(e.target.value) }))}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <FieldLabelHelp
+                    htmlFor={`${createdExerciseCfgId}-increment`}
+                    label="Increment"
+                    helpText={EXERCISE_CONFIG_HELP.increment}
+                  />
+                  <input
+                    id={`${createdExerciseCfgId}-increment`}
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={form.increment}
+                    onChange={(e) => setForm((prev) => ({ ...prev, increment: Number(e.target.value) }))}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <FieldLabelHelp
+                    htmlFor={`${createdExerciseCfgId}-unit`}
+                    label="Unit"
+                    helpText={EXERCISE_CONFIG_HELP.unit}
+                  />
+                  <select
+                    id={`${createdExerciseCfgId}-unit`}
+                    value={form.unit}
+                    onChange={(e) => setForm((prev) => ({ ...prev, unit: e.target.value as "lbs" | "kg" }))}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                  >
+                    <option value="lbs">lbs</option>
+                    <option value="kg">kg</option>
+                  </select>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button type="submit" className={actionButtonClasses.primary}>
@@ -902,72 +940,94 @@ export default function LibraryPage() {
                       ) : null}
                     </p>
                     <div className="grid gap-2 sm:grid-cols-4">
-                      <input
-                        type="number"
-                        min={1}
-                        value={presetExerciseDraft.setCount}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(e.target.value) }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Set count"
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        value={presetExerciseDraft.targetReps}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(e.target.value) }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Target reps"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.5}
-                        value={presetExerciseDraft.increment}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(e.target.value) }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Increment"
-                      />
-                      <select
-                        value={presetExerciseDraft.unit}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, unit: e.target.value as "lbs" | "kg" }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Unit"
-                      >
-                        <option value="lbs">lbs</option>
-                        <option value="kg">kg</option>
-                      </select>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetCreateCfgId}-sets`}
+                          label="Sets"
+                          helpText={EXERCISE_CONFIG_HELP.sets}
+                        />
+                        <input
+                          id={`${presetCreateCfgId}-sets`}
+                          type="number"
+                          min={1}
+                          value={presetExerciseDraft.setCount}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(e.target.value) }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetCreateCfgId}-target`}
+                          label="Target reps"
+                          helpText={EXERCISE_CONFIG_HELP.targetReps}
+                        />
+                        <input
+                          id={`${presetCreateCfgId}-target`}
+                          type="number"
+                          min={1}
+                          value={presetExerciseDraft.targetReps}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(e.target.value) }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetCreateCfgId}-increment`}
+                          label="Increment"
+                          helpText={EXERCISE_CONFIG_HELP.increment}
+                        />
+                        <input
+                          id={`${presetCreateCfgId}-increment`}
+                          type="number"
+                          min={0}
+                          step={0.5}
+                          value={presetExerciseDraft.increment}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(e.target.value) }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetCreateCfgId}-unit`}
+                          label="Unit"
+                          helpText={EXERCISE_CONFIG_HELP.unit}
+                        />
+                        <select
+                          id={`${presetCreateCfgId}-unit`}
+                          value={presetExerciseDraft.unit}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, unit: e.target.value as "lbs" | "kg" }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        >
+                          <option value="lbs">lbs</option>
+                          <option value="kg">kg</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={presetExerciseDraft.trackRir}
-                          onChange={(e) =>
-                            setPresetExerciseDraft((prev) => ({ ...prev, trackRir: e.target.checked }))
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                        />
-                        <span className="text-sm text-slate-700">Track RIR</span>
-                      </label>
-                      <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={presetExerciseDraft.trackRpe}
-                          onChange={(e) =>
-                            setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: e.target.checked }))
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                        />
-                        <span className="text-sm text-slate-700">Track RPE</span>
-                      </label>
+                      <TrackCheckboxRow
+                        checked={presetExerciseDraft.trackRir}
+                        onChange={(checked) =>
+                          setPresetExerciseDraft((prev) => ({ ...prev, trackRir: checked }))
+                        }
+                        labelText="Track RIR"
+                        helpText={EXERCISE_CONFIG_HELP.rir}
+                      />
+                      <TrackCheckboxRow
+                        checked={presetExerciseDraft.trackRpe}
+                        onChange={(checked) =>
+                          setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: checked }))
+                        }
+                        labelText="Track RPE"
+                        helpText={EXERCISE_CONFIG_HELP.rpe}
+                      />
                     </div>
                     <div className="flex justify-end">
                       <button type="submit" className={actionButtonClasses.secondary}>
@@ -1099,72 +1159,94 @@ export default function LibraryPage() {
                       />
                     </label>
                     <div className="grid gap-2 sm:grid-cols-4">
-                      <input
-                        type="number"
-                        min={1}
-                        value={presetExerciseDraft.setCount}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(e.target.value) }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Set count"
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        value={presetExerciseDraft.targetReps}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(e.target.value) }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Target reps"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.5}
-                        value={presetExerciseDraft.increment}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(e.target.value) }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Increment"
-                      />
-                      <select
-                        value={presetExerciseDraft.unit}
-                        onChange={(e) =>
-                          setPresetExerciseDraft((prev) => ({ ...prev, unit: e.target.value as "lbs" | "kg" }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                        aria-label="Unit"
-                      >
-                        <option value="lbs">lbs</option>
-                        <option value="kg">kg</option>
-                      </select>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetEditAddCfgId}-sets`}
+                          label="Sets"
+                          helpText={EXERCISE_CONFIG_HELP.sets}
+                        />
+                        <input
+                          id={`${presetEditAddCfgId}-sets`}
+                          type="number"
+                          min={1}
+                          value={presetExerciseDraft.setCount}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(e.target.value) }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetEditAddCfgId}-target`}
+                          label="Target reps"
+                          helpText={EXERCISE_CONFIG_HELP.targetReps}
+                        />
+                        <input
+                          id={`${presetEditAddCfgId}-target`}
+                          type="number"
+                          min={1}
+                          value={presetExerciseDraft.targetReps}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(e.target.value) }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetEditAddCfgId}-increment`}
+                          label="Increment"
+                          helpText={EXERCISE_CONFIG_HELP.increment}
+                        />
+                        <input
+                          id={`${presetEditAddCfgId}-increment`}
+                          type="number"
+                          min={0}
+                          step={0.5}
+                          value={presetExerciseDraft.increment}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(e.target.value) }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`${presetEditAddCfgId}-unit`}
+                          label="Unit"
+                          helpText={EXERCISE_CONFIG_HELP.unit}
+                        />
+                        <select
+                          id={`${presetEditAddCfgId}-unit`}
+                          value={presetExerciseDraft.unit}
+                          onChange={(e) =>
+                            setPresetExerciseDraft((prev) => ({ ...prev, unit: e.target.value as "lbs" | "kg" }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                        >
+                          <option value="lbs">lbs</option>
+                          <option value="kg">kg</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={presetExerciseDraft.trackRir}
-                          onChange={(e) =>
-                            setPresetExerciseDraft((prev) => ({ ...prev, trackRir: e.target.checked }))
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                        />
-                        <span className="text-sm text-slate-700">Track RIR</span>
-                      </label>
-                      <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={presetExerciseDraft.trackRpe}
-                          onChange={(e) =>
-                            setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: e.target.checked }))
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                        />
-                        <span className="text-sm text-slate-700">Track RPE</span>
-                      </label>
+                      <TrackCheckboxRow
+                        checked={presetExerciseDraft.trackRir}
+                        onChange={(checked) =>
+                          setPresetExerciseDraft((prev) => ({ ...prev, trackRir: checked }))
+                        }
+                        labelText="Track RIR"
+                        helpText={EXERCISE_CONFIG_HELP.rir}
+                      />
+                      <TrackCheckboxRow
+                        checked={presetExerciseDraft.trackRpe}
+                        onChange={(checked) =>
+                          setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: checked }))
+                        }
+                        labelText="Track RPE"
+                        helpText={EXERCISE_CONFIG_HELP.rpe}
+                      />
                     </div>
                     <div className="flex gap-2">
                       <button type="submit" className={actionButtonClasses.secondarySm}>
@@ -1228,90 +1310,112 @@ export default function LibraryPage() {
                     Edit selected exercise config
                   </p>
                   <div className="grid gap-2 sm:grid-cols-4">
-                    <input
-                      type="number"
-                      min={1}
-                      value={editingPresetExercises[selectedEditExerciseIndex].setCount}
-                      onChange={(e) =>
-                        updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
-                          ...prev,
-                          setCount: Number(e.target.value)
-                        }))
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                      aria-label="Edit set count"
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      value={editingPresetExercises[selectedEditExerciseIndex].targetReps}
-                      onChange={(e) =>
-                        updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
-                          ...prev,
-                          targetReps: Number(e.target.value)
-                        }))
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                      aria-label="Edit target reps"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.5}
-                      value={editingPresetExercises[selectedEditExerciseIndex].increment}
-                      onChange={(e) =>
-                        updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
-                          ...prev,
-                          increment: Number(e.target.value)
-                        }))
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                      aria-label="Edit increment"
-                    />
-                    <select
-                      value={editingPresetExercises[selectedEditExerciseIndex].unit}
-                      onChange={(e) =>
-                        updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
-                          ...prev,
-                          unit: e.target.value as "lbs" | "kg"
-                        }))
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-                      aria-label="Edit unit"
-                    >
-                      <option value="lbs">lbs</option>
-                      <option value="kg">kg</option>
-                    </select>
+                    <div className="space-y-1">
+                      <FieldLabelHelp
+                        htmlFor={`${presetEditSelectedCfgId}-sets`}
+                        label="Sets"
+                        helpText={EXERCISE_CONFIG_HELP.sets}
+                      />
+                      <input
+                        id={`${presetEditSelectedCfgId}-sets`}
+                        type="number"
+                        min={1}
+                        value={editingPresetExercises[selectedEditExerciseIndex].setCount}
+                        onChange={(e) =>
+                          updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
+                            ...prev,
+                            setCount: Number(e.target.value)
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabelHelp
+                        htmlFor={`${presetEditSelectedCfgId}-target`}
+                        label="Target reps"
+                        helpText={EXERCISE_CONFIG_HELP.targetReps}
+                      />
+                      <input
+                        id={`${presetEditSelectedCfgId}-target`}
+                        type="number"
+                        min={1}
+                        value={editingPresetExercises[selectedEditExerciseIndex].targetReps}
+                        onChange={(e) =>
+                          updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
+                            ...prev,
+                            targetReps: Number(e.target.value)
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabelHelp
+                        htmlFor={`${presetEditSelectedCfgId}-increment`}
+                        label="Increment"
+                        helpText={EXERCISE_CONFIG_HELP.increment}
+                      />
+                      <input
+                        id={`${presetEditSelectedCfgId}-increment`}
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={editingPresetExercises[selectedEditExerciseIndex].increment}
+                        onChange={(e) =>
+                          updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
+                            ...prev,
+                            increment: Number(e.target.value)
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <FieldLabelHelp
+                        htmlFor={`${presetEditSelectedCfgId}-unit`}
+                        label="Unit"
+                        helpText={EXERCISE_CONFIG_HELP.unit}
+                      />
+                      <select
+                        id={`${presetEditSelectedCfgId}-unit`}
+                        value={editingPresetExercises[selectedEditExerciseIndex].unit}
+                        onChange={(e) =>
+                          updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
+                            ...prev,
+                            unit: e.target.value as "lbs" | "kg"
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+                      >
+                        <option value="lbs">lbs</option>
+                        <option value="kg">kg</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={editingPresetExercises[selectedEditExerciseIndex].trackRir}
-                        onChange={(e) =>
-                          updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
-                            ...prev,
-                            trackRir: e.target.checked
-                          }))
-                        }
-                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                      />
-                      <span className="text-sm text-slate-700">Track RIR</span>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={editingPresetExercises[selectedEditExerciseIndex].trackRpe}
-                        onChange={(e) =>
-                          updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
-                            ...prev,
-                            trackRpe: e.target.checked
-                          }))
-                        }
-                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                      />
-                      <span className="text-sm text-slate-700">Track RPE</span>
-                    </label>
+                    <TrackCheckboxRow
+                      checked={editingPresetExercises[selectedEditExerciseIndex].trackRir}
+                      onChange={(checked) =>
+                        updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
+                          ...prev,
+                          trackRir: checked
+                        }))
+                      }
+                      labelText="Track RIR"
+                      helpText={EXERCISE_CONFIG_HELP.rir}
+                    />
+                    <TrackCheckboxRow
+                      checked={editingPresetExercises[selectedEditExerciseIndex].trackRpe}
+                      onChange={(checked) =>
+                        updateEditingExercise(selectedEditExerciseIndex, (prev) => ({
+                          ...prev,
+                          trackRpe: checked
+                        }))
+                      }
+                      labelText="Track RPE"
+                      helpText={EXERCISE_CONFIG_HELP.rpe}
+                    />
                   </div>
                 </div>
               ) : null}

@@ -34,6 +34,7 @@ Core idea:
   * weight increment
   * weight unit (`lbs` or `kg`)
   * optional tracking toggles: `Track RIR`, `Track RPE`
+* Forms that configure exercises (workout exercise setup, day-overview edit configuration, library created exercises and presets, admin “Create Preset for User,” and admin planned/historical inputs where those metrics appear) use **explicit labels** plus small **`?` help popovers** (`components/help-tooltip.tsx`, shared copy `EXERCISE_CONFIG_HELP`) for fields such as sets, target reps/time, increment, unit, and RIR/RPE/TIR—without changing stored values or progression logic.
 * Manual exercise creation defaults (library + custom setup):
   * Target Reps = `8`
   * Set Count = `3`

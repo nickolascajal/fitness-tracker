@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FormEvent, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
@@ -22,6 +22,11 @@ import {
   parseTrimmedNumberString
 } from "@/lib/workoutInputValidation";
 import { ActionButton, actionButtonClass, actionButtonClasses } from "@/components/action-button";
+import {
+  EXERCISE_CONFIG_HELP,
+  FieldLabelHelp,
+  TrackCheckboxRow
+} from "@/components/help-tooltip";
 
 type SetLog = {
   weight: string;
@@ -620,6 +625,13 @@ export default function WorkoutPage() {
     () => getWorkoutsByDate(selectedWorkoutDate),
     [getWorkoutsByDate, selectedWorkoutDate]
   );
+  const configEditExerciseMeta = useMemo(() => {
+    if (!configEditTargetWorkoutId) return undefined;
+    const entry = workoutsForSelectedDate.find((e) => e.workoutId === configEditTargetWorkoutId);
+    return entry ? exercises.find((ex) => ex.id === entry.exerciseId) : undefined;
+  }, [configEditTargetWorkoutId, workoutsForSelectedDate, exercises]);
+  const setupExerciseFieldId = useId();
+  const configEditFieldId = useId();
   const selectedDateIsRestDay = isDateMarkedRest(selectedWorkoutDate);
   const selectedDateIsFinished = isDateFinished(selectedWorkoutDate);
   const isAddWorkoutBlocked = selectedDateIsRestDay || selectedDateIsFinished;
@@ -2190,9 +2202,14 @@ export default function WorkoutPage() {
                           </label>
                         </div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Set count</span>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${setupExerciseFieldId}-sets`}
+                              label="Sets"
+                              helpText={EXERCISE_CONFIG_HELP.sets}
+                            />
                             <input
+                              id={`${setupExerciseFieldId}-sets`}
                               type="number"
                               min={1}
                               value={setupForm.setCount}
@@ -2201,12 +2218,19 @@ export default function WorkoutPage() {
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">
-                              {setupForm.setupType === "time" ? "Target time (seconds)" : "Target reps"}
-                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${setupExerciseFieldId}-target`}
+                              label={setupForm.setupType === "time" ? "Target time" : "Target reps"}
+                              helpText={
+                                setupForm.setupType === "time"
+                                  ? EXERCISE_CONFIG_HELP.targetTime
+                                  : EXERCISE_CONFIG_HELP.targetReps
+                              }
+                            />
                             <input
+                              id={`${setupExerciseFieldId}-target`}
                               type="number"
                               min={1}
                               value={setupForm.targetReps}
@@ -2215,10 +2239,15 @@ export default function WorkoutPage() {
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Increment</span>
+                          </div>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${setupExerciseFieldId}-increment`}
+                              label="Increment"
+                              helpText={EXERCISE_CONFIG_HELP.increment}
+                            />
                             <input
+                              id={`${setupExerciseFieldId}-increment`}
                               type="number"
                               min={0}
                               step={0.5}
@@ -2228,10 +2257,15 @@ export default function WorkoutPage() {
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Unit</span>
+                          </div>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${setupExerciseFieldId}-unit`}
+                              label="Unit"
+                              helpText={EXERCISE_CONFIG_HELP.unit}
+                            />
                             <select
+                              id={`${setupExerciseFieldId}-unit`}
                               value={setupForm.unit}
                               onChange={(event) => {
                                 const nextUnit = event.target.value as "lbs" | "kg";
@@ -2246,33 +2280,29 @@ export default function WorkoutPage() {
                               <option value="lbs">lbs</option>
                               <option value="kg">kg</option>
                             </select>
-                          </label>
+                          </div>
                         </div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={setupForm.trackRir}
-                              onChange={(event) =>
-                                setSetupForm((prev) => ({ ...prev, trackRir: event.target.checked }))
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                            />
-                            <span className="text-sm text-slate-700">
-                              {setupForm.setupType === "time" ? "Track TIR" : "Track RIR"}
-                            </span>
-                          </label>
-                          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={setupForm.trackRpe}
-                              onChange={(event) =>
-                                setSetupForm((prev) => ({ ...prev, trackRpe: event.target.checked }))
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                            />
-                            <span className="text-sm text-slate-700">Track RPE</span>
-                          </label>
+                          <TrackCheckboxRow
+                            checked={setupForm.trackRir}
+                            onChange={(checked) =>
+                              setSetupForm((prev) => ({ ...prev, trackRir: checked }))
+                            }
+                            labelText={setupForm.setupType === "time" ? "Track TIR" : "Track RIR"}
+                            helpText={
+                              setupForm.setupType === "time"
+                                ? EXERCISE_CONFIG_HELP.tir
+                                : EXERCISE_CONFIG_HELP.rir
+                            }
+                          />
+                          <TrackCheckboxRow
+                            checked={setupForm.trackRpe}
+                            onChange={(checked) =>
+                              setSetupForm((prev) => ({ ...prev, trackRpe: checked }))
+                            }
+                            labelText="Track RPE"
+                            helpText={EXERCISE_CONFIG_HELP.rpe}
+                          />
                         </div>
                         <div className="mt-3 flex gap-2">
                           <button
@@ -2316,9 +2346,14 @@ export default function WorkoutPage() {
                       <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                         <p className="text-sm font-semibold text-slate-900">{configEditExerciseName}</p>
                         <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Set count</span>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${configEditFieldId}-sets`}
+                              label="Sets"
+                              helpText={EXERCISE_CONFIG_HELP.sets}
+                            />
                             <input
+                              id={`${configEditFieldId}-sets`}
                               type="number"
                               min={1}
                               value={configEditForm.setCount}
@@ -2330,10 +2365,21 @@ export default function WorkoutPage() {
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Target reps</span>
+                          </div>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${configEditFieldId}-target`}
+                              label={
+                                configEditExerciseMeta?.type === "time" ? "Target time" : "Target reps"
+                              }
+                              helpText={
+                                configEditExerciseMeta?.type === "time"
+                                  ? EXERCISE_CONFIG_HELP.targetTime
+                                  : EXERCISE_CONFIG_HELP.targetReps
+                              }
+                            />
                             <input
+                              id={`${configEditFieldId}-target`}
                               type="number"
                               min={1}
                               value={configEditForm.targetReps}
@@ -2345,10 +2391,15 @@ export default function WorkoutPage() {
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Increment</span>
+                          </div>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${configEditFieldId}-increment`}
+                              label="Increment"
+                              helpText={EXERCISE_CONFIG_HELP.increment}
+                            />
                             <input
+                              id={`${configEditFieldId}-increment`}
                               type="number"
                               min={0}
                               step={0.5}
@@ -2361,10 +2412,15 @@ export default function WorkoutPage() {
                               }
                               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
                             />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-medium text-slate-600">Unit</span>
+                          </div>
+                          <div className="space-y-1">
+                            <FieldLabelHelp
+                              htmlFor={`${configEditFieldId}-unit`}
+                              label="Unit"
+                              helpText={EXERCISE_CONFIG_HELP.unit}
+                            />
                             <select
+                              id={`${configEditFieldId}-unit`}
                               value={configEditForm.unit}
                               onChange={(event) => {
                                 const nextUnit = event.target.value as "lbs" | "kg";
@@ -2379,37 +2435,37 @@ export default function WorkoutPage() {
                               <option value="lbs">lbs</option>
                               <option value="kg">kg</option>
                             </select>
-                          </label>
+                          </div>
                         </div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={configEditForm.trackRir}
-                              onChange={(event) =>
-                                setConfigEditForm((prev) => ({
-                                  ...prev,
-                                  trackRir: event.target.checked
-                                }))
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                            />
-                            <span className="text-sm text-slate-700">Track RIR</span>
-                          </label>
-                          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={configEditForm.trackRpe}
-                              onChange={(event) =>
-                                setConfigEditForm((prev) => ({
-                                  ...prev,
-                                  trackRpe: event.target.checked
-                                }))
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                            />
-                            <span className="text-sm text-slate-700">Track RPE</span>
-                          </label>
+                          <TrackCheckboxRow
+                            checked={configEditForm.trackRir}
+                            onChange={(checked) =>
+                              setConfigEditForm((prev) => ({
+                                ...prev,
+                                trackRir: checked
+                              }))
+                            }
+                            labelText={
+                              configEditExerciseMeta?.type === "time" ? "Track TIR" : "Track RIR"
+                            }
+                            helpText={
+                              configEditExerciseMeta?.type === "time"
+                                ? EXERCISE_CONFIG_HELP.tir
+                                : EXERCISE_CONFIG_HELP.rir
+                            }
+                          />
+                          <TrackCheckboxRow
+                            checked={configEditForm.trackRpe}
+                            onChange={(checked) =>
+                              setConfigEditForm((prev) => ({
+                                ...prev,
+                                trackRpe: checked
+                              }))
+                            }
+                            labelText="Track RPE"
+                            helpText={EXERCISE_CONFIG_HELP.rpe}
+                          />
                         </div>
                         <div className="mt-3 flex gap-2">
                           <button

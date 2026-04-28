@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   addAdminHistoricalPresetToUserDateAction,
   assignAdminPresetToUserDateAction,
@@ -14,6 +14,11 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { canSubmitWorkoutInputs } from "@/lib/workoutInputValidation";
 import { actionButtonClass, actionButtonClasses } from "@/components/action-button";
+import {
+  EXERCISE_CONFIG_HELP,
+  FieldLabelHelp,
+  TrackCheckboxRow
+} from "@/components/help-tooltip";
 
 type WorkoutRow = {
   id: string;
@@ -140,6 +145,8 @@ export function AdminUserWorkoutsClient({
   const [createPresetError, setCreatePresetError] = useState<string | null>(null);
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [isUpdatingRestDay, setIsUpdatingRestDay] = useState(false);
+
+  const adminPresetCfgId = useId();
 
   const selectedPreset = assignablePresets.find((preset) => preset.id === selectedPresetId) ?? null;
 
@@ -339,112 +346,152 @@ export function AdminUserWorkoutsClient({
         </label>
         <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add exercise</p>
-          <input
-            type="text"
-            value={presetExerciseDraft.name}
-            onChange={(event) =>
-              setPresetExerciseDraft((prev) => ({ ...prev, name: event.target.value }))
-            }
-            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-            placeholder="Exercise name"
-          />
-          <select
-            value={presetExerciseDraft.exerciseType}
-            onChange={(event) =>
-              setPresetExerciseDraft((prev) => ({
-                ...prev,
-                exerciseType: event.target.value as "weight" | "bodyweight" | "time",
-                targetMode: event.target.value === "time" ? "time" : "reps"
-              }))
-            }
-            className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-          >
-            <option value="weight">Weight</option>
-            <option value="bodyweight">Bodyweight</option>
-            <option value="time">Time</option>
-          </select>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-slate-600">Exercise name</span>
+            <input
+              type="text"
+              value={presetExerciseDraft.name}
+              onChange={(event) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, name: event.target.value }))
+              }
+              className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              placeholder="Exercise name"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-slate-600">Exercise type</span>
             <select
-              value={presetExerciseDraft.targetMode}
+              value={presetExerciseDraft.exerciseType}
               onChange={(event) =>
                 setPresetExerciseDraft((prev) => ({
                   ...prev,
-                  targetMode: event.target.value as "reps" | "time"
+                  exerciseType: event.target.value as "weight" | "bodyweight" | "time",
+                  targetMode: event.target.value === "time" ? "time" : "reps"
                 }))
               }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
             >
-              <option value="reps">Target reps</option>
-              <option value="time">Target time (seconds)</option>
+              <option value="weight">Weight</option>
+              <option value="bodyweight">Bodyweight</option>
+              <option value="time">Time</option>
             </select>
-            <input
-              type="number"
-              min={1}
-              value={presetExerciseDraft.targetReps}
-              onChange={(event) =>
-                setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(event.target.value) }))
-              }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-              aria-label={presetExerciseDraft.targetMode === "time" ? "Target time" : "Target reps"}
-            />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-slate-600">Target mode</span>
+              <select
+                id={`${adminPresetCfgId}-target-mode`}
+                value={presetExerciseDraft.targetMode}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({
+                    ...prev,
+                    targetMode: event.target.value as "reps" | "time"
+                  }))
+                }
+                className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              >
+                <option value="reps">Target reps</option>
+                <option value="time">Target time (seconds)</option>
+              </select>
+            </label>
+            <div className="space-y-1">
+              <FieldLabelHelp
+                htmlFor={`${adminPresetCfgId}-target-value`}
+                label={presetExerciseDraft.targetMode === "time" ? "Target time" : "Target reps"}
+                helpText={
+                  presetExerciseDraft.targetMode === "time"
+                    ? EXERCISE_CONFIG_HELP.targetTime
+                    : EXERCISE_CONFIG_HELP.targetReps
+                }
+              />
+              <input
+                id={`${adminPresetCfgId}-target-value`}
+                type="number"
+                min={1}
+                value={presetExerciseDraft.targetReps}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({ ...prev, targetReps: Number(event.target.value) }))
+                }
+                className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              />
+            </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
-            <input
-              type="number"
-              min={1}
-              value={presetExerciseDraft.setCount}
-              onChange={(event) =>
-                setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(event.target.value) }))
-              }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-              aria-label="Set count"
-            />
-            <input
-              type="number"
-              min={0}
-              step={0.5}
-              value={presetExerciseDraft.increment}
-              onChange={(event) =>
-                setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(event.target.value) }))
-              }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-              aria-label="Increment"
-            />
-            <select
-              value={presetExerciseDraft.unit}
-              onChange={(event) =>
-                setPresetExerciseDraft((prev) => ({ ...prev, unit: event.target.value as "lbs" | "kg" }))
-              }
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
-              aria-label="Unit"
-            >
-              <option value="lbs">lbs</option>
-              <option value="kg">kg</option>
-            </select>
+            <div className="space-y-1">
+              <FieldLabelHelp
+                htmlFor={`${adminPresetCfgId}-sets`}
+                label="Sets"
+                helpText={EXERCISE_CONFIG_HELP.sets}
+              />
+              <input
+                id={`${adminPresetCfgId}-sets`}
+                type="number"
+                min={1}
+                value={presetExerciseDraft.setCount}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({ ...prev, setCount: Number(event.target.value) }))
+                }
+                className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              />
+            </div>
+            <div className="space-y-1">
+              <FieldLabelHelp
+                htmlFor={`${adminPresetCfgId}-increment`}
+                label="Increment"
+                helpText={EXERCISE_CONFIG_HELP.increment}
+              />
+              <input
+                id={`${adminPresetCfgId}-increment`}
+                type="number"
+                min={0}
+                step={0.5}
+                value={presetExerciseDraft.increment}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({ ...prev, increment: Number(event.target.value) }))
+                }
+                className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              />
+            </div>
+            <div className="space-y-1">
+              <FieldLabelHelp
+                htmlFor={`${adminPresetCfgId}-unit`}
+                label="Unit"
+                helpText={EXERCISE_CONFIG_HELP.unit}
+              />
+              <select
+                id={`${adminPresetCfgId}-unit`}
+                value={presetExerciseDraft.unit}
+                onChange={(event) =>
+                  setPresetExerciseDraft((prev) => ({ ...prev, unit: event.target.value as "lbs" | "kg" }))
+                }
+                className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
+              >
+                <option value="lbs">lbs</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={presetExerciseDraft.trackRir}
-                onChange={(event) =>
-                  setPresetExerciseDraft((prev) => ({ ...prev, trackRir: event.target.checked }))
-                }
-                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-              />
-              {presetExerciseDraft.targetMode === "time" ? "Track TIR" : "Track RIR"}
-            </label>
-            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={presetExerciseDraft.trackRpe}
-                onChange={(event) =>
-                  setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: event.target.checked }))
-                }
-                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-              />
-              Track RPE
-            </label>
+            <TrackCheckboxRow
+              checked={presetExerciseDraft.trackRir}
+              onChange={(checked) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, trackRir: checked }))
+              }
+              labelText={presetExerciseDraft.targetMode === "time" ? "Track TIR" : "Track RIR"}
+              helpText={
+                presetExerciseDraft.targetMode === "time"
+                  ? EXERCISE_CONFIG_HELP.tir
+                  : EXERCISE_CONFIG_HELP.rir
+              }
+            />
+            <TrackCheckboxRow
+              checked={presetExerciseDraft.trackRpe}
+              onChange={(checked) =>
+                setPresetExerciseDraft((prev) => ({ ...prev, trackRpe: checked }))
+              }
+              labelText="Track RPE"
+              helpText={EXERCISE_CONFIG_HELP.rpe}
+            />
           </div>
           <button
             type="button"
@@ -686,93 +733,120 @@ export function AdminUserWorkoutsClient({
                 <div className="space-y-2">
                   {(historicalSetsByExerciseId[exercise.id] ?? []).map((set, setIndex) => (
                     <div key={`${exercise.id}-${setIndex}`} className="grid gap-2 sm:grid-cols-6">
-                      <input
-                        type="number"
-                        step={0.5}
-                        value={set.weight}
-                        onChange={(event) =>
-                          setHistoricalSetsByExerciseId((prev) => ({
-                            ...prev,
-                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
-                              i === setIndex ? { ...item, weight: event.target.value } : item
-                            )
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        placeholder="Weight"
-                      />
-                      <input
-                        type="number"
-                        step={1}
-                        value={set.reps}
-                        onChange={(event) =>
-                          setHistoricalSetsByExerciseId((prev) => ({
-                            ...prev,
-                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
-                              i === setIndex ? { ...item, reps: event.target.value } : item
-                            )
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        placeholder="Reps"
-                      />
-                      <input
-                        type="number"
-                        step={1}
-                        value={set.timeSeconds}
-                        onChange={(event) =>
-                          setHistoricalSetsByExerciseId((prev) => ({
-                            ...prev,
-                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
-                              i === setIndex ? { ...item, timeSeconds: event.target.value } : item
-                            )
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        placeholder="Time (s)"
-                      />
-                      <input
-                        type="text"
-                        value={set.rir}
-                        onChange={(event) =>
-                          setHistoricalSetsByExerciseId((prev) => ({
-                            ...prev,
-                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
-                              i === setIndex ? { ...item, rir: event.target.value } : item
-                            )
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        placeholder="RIR"
-                      />
-                      <input
-                        type="text"
-                        value={set.tir}
-                        onChange={(event) =>
-                          setHistoricalSetsByExerciseId((prev) => ({
-                            ...prev,
-                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
-                              i === setIndex ? { ...item, tir: event.target.value } : item
-                            )
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        placeholder="TIR"
-                      />
-                      <input
-                        type="text"
-                        value={set.rpe}
-                        onChange={(event) =>
-                          setHistoricalSetsByExerciseId((prev) => ({
-                            ...prev,
-                            [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
-                              i === setIndex ? { ...item, rpe: event.target.value } : item
-                            )
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                        placeholder="RPE"
-                      />
+                      <div className="space-y-1">
+                        <span className="text-[0.65rem] font-medium text-slate-600">Weight</span>
+                        <input
+                          type="number"
+                          step={0.5}
+                          value={set.weight}
+                          onChange={(event) =>
+                            setHistoricalSetsByExerciseId((prev) => ({
+                              ...prev,
+                              [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                                i === setIndex ? { ...item, weight: event.target.value } : item
+                              )
+                            }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.65rem] font-medium text-slate-600">Reps</span>
+                        <input
+                          type="number"
+                          step={1}
+                          value={set.reps}
+                          onChange={(event) =>
+                            setHistoricalSetsByExerciseId((prev) => ({
+                              ...prev,
+                              [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                                i === setIndex ? { ...item, reps: event.target.value } : item
+                              )
+                            }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.65rem] font-medium text-slate-600">Time (s)</span>
+                        <input
+                          type="number"
+                          step={1}
+                          value={set.timeSeconds}
+                          onChange={(event) =>
+                            setHistoricalSetsByExerciseId((prev) => ({
+                              ...prev,
+                              [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                                i === setIndex ? { ...item, timeSeconds: event.target.value } : item
+                              )
+                            }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`hist-${exercise.id}-${setIndex}-rir`}
+                          label="RIR"
+                          helpText={EXERCISE_CONFIG_HELP.rir}
+                        />
+                        <input
+                          id={`hist-${exercise.id}-${setIndex}-rir`}
+                          type="text"
+                          value={set.rir}
+                          onChange={(event) =>
+                            setHistoricalSetsByExerciseId((prev) => ({
+                              ...prev,
+                              [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                                i === setIndex ? { ...item, rir: event.target.value } : item
+                              )
+                            }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`hist-${exercise.id}-${setIndex}-tir`}
+                          label="TIR"
+                          helpText={EXERCISE_CONFIG_HELP.tir}
+                        />
+                        <input
+                          id={`hist-${exercise.id}-${setIndex}-tir`}
+                          type="text"
+                          value={set.tir}
+                          onChange={(event) =>
+                            setHistoricalSetsByExerciseId((prev) => ({
+                              ...prev,
+                              [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                                i === setIndex ? { ...item, tir: event.target.value } : item
+                              )
+                            }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabelHelp
+                          htmlFor={`hist-${exercise.id}-${setIndex}-rpe`}
+                          label="RPE"
+                          helpText={EXERCISE_CONFIG_HELP.rpe}
+                        />
+                        <input
+                          id={`hist-${exercise.id}-${setIndex}-rpe`}
+                          type="text"
+                          value={set.rpe}
+                          onChange={(event) =>
+                            setHistoricalSetsByExerciseId((prev) => ({
+                              ...prev,
+                              [exercise.id]: (prev[exercise.id] ?? []).map((item, i) =>
+                                i === setIndex ? { ...item, rpe: event.target.value } : item
+                              )
+                            }))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -797,81 +871,108 @@ export function AdminUserWorkoutsClient({
               return (
                 <div key={exercise.id} className="grid gap-2 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-6">
                   <p className="sm:col-span-6 text-sm font-medium text-slate-900">{exercise.name}</p>
-                  <input
-                    type="number"
-                    step={0.5}
-                    value={prefill.weight}
-                    onChange={(event) =>
-                      setDraftPrefillByExerciseId((prev) => ({
-                        ...prev,
-                        [exercise.id]: { ...prefill, weight: event.target.value }
-                      }))
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    placeholder="Weight"
-                  />
-                  <input
-                    type="number"
-                    step={1}
-                    value={prefill.reps}
-                    onChange={(event) =>
-                      setDraftPrefillByExerciseId((prev) => ({
-                        ...prev,
-                        [exercise.id]: { ...prefill, reps: event.target.value }
-                      }))
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    placeholder="Reps"
-                  />
-                  <input
-                    type="number"
-                    step={1}
-                    value={prefill.timeSeconds}
-                    onChange={(event) =>
-                      setDraftPrefillByExerciseId((prev) => ({
-                        ...prev,
-                        [exercise.id]: { ...prefill, timeSeconds: event.target.value }
-                      }))
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    placeholder="Time (s)"
-                  />
-                  <input
-                    type="text"
-                    value={prefill.rir}
-                    onChange={(event) =>
-                      setDraftPrefillByExerciseId((prev) => ({
-                        ...prev,
-                        [exercise.id]: { ...prefill, rir: event.target.value }
-                      }))
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    placeholder="RIR"
-                  />
-                  <input
-                    type="text"
-                    value={prefill.tir}
-                    onChange={(event) =>
-                      setDraftPrefillByExerciseId((prev) => ({
-                        ...prev,
-                        [exercise.id]: { ...prefill, tir: event.target.value }
-                      }))
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    placeholder="TIR"
-                  />
-                  <input
-                    type="text"
-                    value={prefill.rpe}
-                    onChange={(event) =>
-                      setDraftPrefillByExerciseId((prev) => ({
-                        ...prev,
-                        [exercise.id]: { ...prefill, rpe: event.target.value }
-                      }))
-                    }
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    placeholder="RPE"
-                  />
+                  <div className="space-y-1">
+                    <span className="text-[0.65rem] font-medium text-slate-600">Weight</span>
+                    <input
+                      type="number"
+                      step={0.5}
+                      value={prefill.weight}
+                      onChange={(event) =>
+                        setDraftPrefillByExerciseId((prev) => ({
+                          ...prev,
+                          [exercise.id]: { ...prefill, weight: event.target.value }
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[0.65rem] font-medium text-slate-600">Reps</span>
+                    <input
+                      type="number"
+                      step={1}
+                      value={prefill.reps}
+                      onChange={(event) =>
+                        setDraftPrefillByExerciseId((prev) => ({
+                          ...prev,
+                          [exercise.id]: { ...prefill, reps: event.target.value }
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[0.65rem] font-medium text-slate-600">Time (s)</span>
+                    <input
+                      type="number"
+                      step={1}
+                      value={prefill.timeSeconds}
+                      onChange={(event) =>
+                        setDraftPrefillByExerciseId((prev) => ({
+                          ...prev,
+                          [exercise.id]: { ...prefill, timeSeconds: event.target.value }
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <FieldLabelHelp
+                      htmlFor={`plan-${exercise.id}-rir`}
+                      label="RIR"
+                      helpText={EXERCISE_CONFIG_HELP.rir}
+                    />
+                    <input
+                      id={`plan-${exercise.id}-rir`}
+                      type="text"
+                      value={prefill.rir}
+                      onChange={(event) =>
+                        setDraftPrefillByExerciseId((prev) => ({
+                          ...prev,
+                          [exercise.id]: { ...prefill, rir: event.target.value }
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <FieldLabelHelp
+                      htmlFor={`plan-${exercise.id}-tir`}
+                      label="TIR"
+                      helpText={EXERCISE_CONFIG_HELP.tir}
+                    />
+                    <input
+                      id={`plan-${exercise.id}-tir`}
+                      type="text"
+                      value={prefill.tir}
+                      onChange={(event) =>
+                        setDraftPrefillByExerciseId((prev) => ({
+                          ...prev,
+                          [exercise.id]: { ...prefill, tir: event.target.value }
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <FieldLabelHelp
+                      htmlFor={`plan-${exercise.id}-rpe`}
+                      label="RPE"
+                      helpText={EXERCISE_CONFIG_HELP.rpe}
+                    />
+                    <input
+                      id={`plan-${exercise.id}-rpe`}
+                      type="text"
+                      value={prefill.rpe}
+                      onChange={(event) =>
+                        setDraftPrefillByExerciseId((prev) => ({
+                          ...prev,
+                          [exercise.id]: { ...prefill, rpe: event.target.value }
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                    />
+                  </div>
                 </div>
               );
             })}
