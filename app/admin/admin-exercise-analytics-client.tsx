@@ -175,6 +175,21 @@ export function AdminExerciseAnalyticsClient({ expectedAdminEmail }: { expectedA
             Aggregate usage and CPS ranges by normalized exercise name (no individual user identities). Generated{" "}
             <span className="font-mono text-xs">{snapshot.generatedAt}</span>
           </p>
+          <p className="mt-2 text-sm text-slate-700">
+            <span className="font-medium text-slate-800">All exercises:</span>{" "}
+            <span className="tabular-nums">{snapshot.totals.includedSessions}</span> sessions included in CPS stats ·{" "}
+            <span className="tabular-nums">{snapshot.totals.excludedOutlierSessions}</span> excluded outliers ·{" "}
+            <span className="tabular-nums">{snapshot.totals.eligibleSessions}</span> eligible (finite CPS, non-draft)
+          </p>
+          <details className="mt-2 text-sm text-slate-600">
+            <summary className="cursor-pointer font-medium text-slate-700 hover:text-slate-900">
+              About outlier exclusion
+            </summary>
+            <p className="mt-2 border-l-2 border-slate-200 pl-3 text-slate-600">
+              Outliers excluded from analytics only; original workouts are unchanged. User-facing CPS and stored workout
+              rows are not modified.
+            </p>
+          </details>
         </div>
         <button
           type="button"
@@ -236,7 +251,8 @@ export function AdminExerciseAnalyticsClient({ expectedAdminEmail }: { expectedA
                 <th className="px-3 py-2" />
                 <th className="px-3 py-2">Exercise</th>
                 <th className="px-3 py-2 text-right">Users</th>
-                <th className="px-3 py-2 text-right">Sessions</th>
+                <th className="px-3 py-2 text-right">Sessions (incl.)</th>
+                <th className="px-3 py-2 text-right">Outliers</th>
                 <th className="px-3 py-2 text-right">CPS high</th>
                 <th className="px-3 py-2 text-right">CPS low</th>
                 <th className="px-3 py-2 text-right">Configs</th>
@@ -245,7 +261,7 @@ export function AdminExerciseAnalyticsClient({ expectedAdminEmail }: { expectedA
             <tbody>
               {filteredSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-slate-600">
+                  <td colSpan={8} className="px-4 py-6 text-center text-slate-600">
                     No rows match this filter.
                   </td>
                 </tr>
@@ -299,6 +315,7 @@ function ExerciseNameRow({
         </td>
         <td className="px-3 py-2 text-right tabular-nums">{row.userCount}</td>
         <td className="px-3 py-2 text-right tabular-nums">{row.sessionCount}</td>
+        <td className="px-3 py-2 text-right tabular-nums text-slate-600">{row.sessionsExcludedOutliers}</td>
         <td className="px-3 py-2 text-right tabular-nums">{formatCps(row.cpsHigh)}</td>
         <td className="px-3 py-2 text-right tabular-nums">{formatCps(row.cpsLow)}</td>
         <td className="px-3 py-2 text-right tabular-nums">{row.distinctConfigCount}</td>
@@ -307,7 +324,7 @@ function ExerciseNameRow({
         ? row.configs.map((cfg) => (
             <tr key={cfg.fingerprint} className="border-t border-slate-100 bg-slate-50/90 text-xs">
               <td />
-              <td className="px-3 py-2 pl-8 text-slate-700" colSpan={6}>
+              <td className="px-3 py-2 pl-8 text-slate-700" colSpan={7}>
                 <ConfigDetail cfg={cfg} />
               </td>
             </tr>
@@ -339,7 +356,8 @@ function ConfigDetail({ cfg }: { cfg: AdminExerciseAnalyticsConfigStat }) {
       </p>
       <p>
         <span className="font-medium text-slate-600">Users:</span> {cfg.userCount} ·{" "}
-        <span className="font-medium text-slate-600">Sessions:</span> {cfg.sessionCount}
+        <span className="font-medium text-slate-600">Sessions (incl.):</span> {cfg.sessionCount} ·{" "}
+        <span className="font-medium text-slate-600">Outliers:</span> {cfg.excludedOutlierSessions}
       </p>
       <p>
         <span className="font-medium text-slate-600">CPS high / low / avg:</span> {formatCps(cfg.cpsHigh)} /{" "}

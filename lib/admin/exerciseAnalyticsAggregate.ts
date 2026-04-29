@@ -1,5 +1,21 @@
 import { exerciseNameKey } from "@/lib/exerciseNameKey";
-import { parseWorkoutEntryFromJson } from "@/lib/admin/parseWorkoutEntry";
+import {
+  parseWorkoutEntryFromJson,
+  type AdminWorkoutDisplayEntry
+} from "@/lib/admin/parseWorkoutEntry";
+import {
+  filterSessionsByMedianHighCap,
+  sessionFailsAbsoluteAnalyticsRules
+} from "@/lib/admin/exerciseAnalyticsOutliers";
+
+export type AdminExerciseAnalyticsTotals = {
+  /** Parsed, non-draft, finite CPS, not rest-day marker (before outlier rules) */
+  eligibleSessions: number;
+  /** Sessions contributing to CPS aggregates */
+  includedSessions: number;
+  /** Eligible minus included (absolute + median caps; analytics only) */
+  excludedOutlierSessions: number;
+};
 
 export type AdminExerciseAnalyticsConfigStat = {
   fingerprint: string;
@@ -11,9 +27,12 @@ export type AdminExerciseAnalyticsConfigStat = {
   trackRir: boolean;
   trackRpe: boolean;
   foundation: number;
-  /** Unique users who own this config and/or logged sessions attributed to it */
+  /** Unique users who own this config and/or logged included sessions attributed to it */
   userCount: number;
+  /** Sessions included in CPS stats for this config */
   sessionCount: number;
+  /** Sessions attributed to this config but excluded by analytics-only outlier rules */
+  excludedOutlierSessions: number;
   cpsHigh: number | null;
   cpsLow: number | null;
   cpsAverage: number | null;
@@ -24,7 +43,10 @@ export type AdminExerciseAnalyticsNameStat = {
   displayName: string;
   primaryType: "weight" | "bodyweight" | "time" | "mixed";
   userCount: number;
+  /** Sessions included in name-level CPS aggregates */
   sessionCount: number;
+  /** Eligible sessions excluded from name-level CPS aggregates only */
+  sessionsExcludedOutliers: number;
   cpsHigh: number | null;
   cpsLow: number | null;
   distinctConfigCount: number;
@@ -33,6 +55,7 @@ export type AdminExerciseAnalyticsNameStat = {
 
 export type AdminExerciseAnalyticsSnapshot = {
   generatedAt: string;
+  totals: AdminExerciseAnalyticsTotals;
   rows: AdminExerciseAnalyticsNameStat[];
 };
 
@@ -129,14 +152,20 @@ export function buildExerciseAnalyticsSnapshot(
 
   const fingerprintMeta = new Map<string, ParsedExerciseConfig>();
   const configUsers = new Map<string, Set<string>>();
-  const configSessions = new Map<string, number>();
-  const configCpsValues = new Map<string, number[]>();
 
   const nameUsers = new Map<string, Set<string>>();
-  const nameSessions = new Map<string, number>();
-  const nameCpsValues = new Map<string, number[]>();
   const nameDisplayCounts = new Map<string, Map<string, number>>();
   const nameFingerprints = new Map<string, Set<string>>();
+
+  type AnalyticsSession = {
+    dedupeKey: string;
+    userId: string;
+    nk: string;
+    fp: string | null;
+    cps: number;
+    sets: AdminWorkoutDisplayEntry["sets"];
+    exerciseType: "weight" | "bodyweight" | "time";
+  };
 
   const addDisplayName = (nameKey: string, display: string) => {
     const trimmed = display.trim();
@@ -189,6 +218,8 @@ export function buildExerciseAnalyticsSnapshot(
     return null;
   };
 
+  const eligibleSessions: AnalyticsSession[] = [];
+
   for (const row of workoutRows) {
     const userId = typeof row.user_id === "string" ? row.user_id : "";
     if (!userId) continue;
@@ -199,38 +230,98 @@ export function buildExerciseAnalyticsSnapshot(
     if (parsed.isDraft === true) continue;
     if (parsed.sessionCps === null || !Number.isFinite(parsed.sessionCps)) continue;
 
-    const cps = parsed.sessionCps;
     const nk = exerciseNameKey(parsed.exerciseName);
     addDisplayName(nk, parsed.exerciseName);
 
     if (!nameUsers.has(nk)) nameUsers.set(nk, new Set());
     nameUsers.get(nk)!.add(userId);
-    nameSessions.set(nk, (nameSessions.get(nk) ?? 0) + 1);
-    if (!nameCpsValues.has(nk)) nameCpsValues.set(nk, []);
-    nameCpsValues.get(nk)!.push(cps);
 
     const fp = resolveFingerprintForWorkout(userId, parsed.exerciseId, nk);
+    const exerciseType: AnalyticsSession["exerciseType"] = fp
+      ? fingerprintMeta.get(fp)?.type ?? "weight"
+      : "weight";
+
     if (fp) {
-      if (!configSessions.has(fp)) configSessions.set(fp, 0);
-      configSessions.set(fp, (configSessions.get(fp) ?? 0) + 1);
-      if (!configCpsValues.has(fp)) configCpsValues.set(fp, []);
-      configCpsValues.get(fp)!.push(cps);
       if (!configUsers.has(fp)) configUsers.set(fp, new Set());
       configUsers.get(fp)!.add(userId);
+    }
+
+    eligibleSessions.push({
+      dedupeKey: `${userId}|${parsed.workoutId}|${parsed.submittedAt}`,
+      userId,
+      nk,
+      fp,
+      cps: parsed.sessionCps,
+      sets: parsed.sets,
+      exerciseType
+    });
+  }
+
+  const absIncluded: AnalyticsSession[] = [];
+  for (const s of eligibleSessions) {
+    if (sessionFailsAbsoluteAnalyticsRules(s.cps, s.sets, s.exerciseType)) continue;
+    absIncluded.push(s);
+  }
+
+  const byFp = new Map<string, AnalyticsSession[]>();
+  const byOrphanNk = new Map<string, AnalyticsSession[]>();
+  for (const s of absIncluded) {
+    if (s.fp) {
+      const list = byFp.get(s.fp) ?? [];
+      list.push(s);
+      byFp.set(s.fp, list);
+    } else {
+      const list = byOrphanNk.get(s.nk) ?? [];
+      list.push(s);
+      byOrphanNk.set(s.nk, list);
+    }
+  }
+
+  const finalIncluded: AnalyticsSession[] = [];
+  for (const list of byFp.values()) {
+    const { kept } = filterSessionsByMedianHighCap(list);
+    finalIncluded.push(...kept);
+  }
+  for (const list of byOrphanNk.values()) {
+    const { kept } = filterSessionsByMedianHighCap(list);
+    finalIncluded.push(...kept);
+  }
+
+  const eligibleCountByNk = new Map<string, number>();
+  const eligibleCountByFp = new Map<string, number>();
+  for (const s of eligibleSessions) {
+    eligibleCountByNk.set(s.nk, (eligibleCountByNk.get(s.nk) ?? 0) + 1);
+    if (s.fp) eligibleCountByFp.set(s.fp, (eligibleCountByFp.get(s.fp) ?? 0) + 1);
+  }
+
+  const includedCountByNk = new Map<string, number>();
+  const includedCountByFp = new Map<string, number>();
+  const nameCpsValues = new Map<string, number[]>();
+  const configCpsValues = new Map<string, number[]>();
+
+  for (const s of finalIncluded) {
+    includedCountByNk.set(s.nk, (includedCountByNk.get(s.nk) ?? 0) + 1);
+    if (!nameCpsValues.has(s.nk)) nameCpsValues.set(s.nk, []);
+    nameCpsValues.get(s.nk)!.push(s.cps);
+    if (s.fp) {
+      includedCountByFp.set(s.fp, (includedCountByFp.get(s.fp) ?? 0) + 1);
+      if (!configCpsValues.has(s.fp)) configCpsValues.set(s.fp, []);
+      configCpsValues.get(s.fp)!.push(s.cps);
     }
   }
 
   const nameKeys = new Set<string>([
     ...nameUsers.keys(),
     ...nameFingerprints.keys(),
-    ...nameSessions.keys()
+    ...eligibleCountByNk.keys()
   ]);
 
   const rows: AdminExerciseAnalyticsNameStat[] = [];
 
   for (const nk of nameKeys) {
     const fpSet = nameFingerprints.get(nk) ?? new Set<string>();
-    const sessions = nameSessions.get(nk) ?? 0;
+    const eligibleNk = eligibleCountByNk.get(nk) ?? 0;
+    const includedNk = includedCountByNk.get(nk) ?? 0;
     const users = nameUsers.get(nk) ?? new Set<string>();
     const cpsList = nameCpsValues.get(nk) ?? [];
     const cpsHigh = cpsList.length ? Math.max(...cpsList) : null;
@@ -252,7 +343,8 @@ export function buildExerciseAnalyticsSnapshot(
 
     const configs: AdminExerciseAnalyticsConfigStat[] = [...fpSet].map((fp) => {
       const meta = fingerprintMeta.get(fp);
-      const sessionCount = configSessions.get(fp) ?? 0;
+      const eligibleFp = eligibleCountByFp.get(fp) ?? 0;
+      const includedFp = includedCountByFp.get(fp) ?? 0;
       const cpsVals = configCpsValues.get(fp) ?? [];
       const usersForConfig = configUsers.get(fp) ?? new Set<string>();
       return {
@@ -266,7 +358,8 @@ export function buildExerciseAnalyticsSnapshot(
         trackRpe: meta?.trackRpe ?? false,
         foundation: meta?.foundation ?? 0,
         userCount: usersForConfig.size,
-        sessionCount,
+        sessionCount: includedFp,
+        excludedOutlierSessions: Math.max(0, eligibleFp - includedFp),
         cpsHigh: cpsVals.length ? Math.max(...cpsVals) : null,
         cpsLow: cpsVals.length ? Math.min(...cpsVals) : null,
         cpsAverage: mean(cpsVals)
@@ -286,7 +379,8 @@ export function buildExerciseAnalyticsSnapshot(
       displayName,
       primaryType,
       userCount: users.size,
-      sessionCount: sessions,
+      sessionCount: includedNk,
+      sessionsExcludedOutliers: Math.max(0, eligibleNk - includedNk),
       cpsHigh,
       cpsLow,
       distinctConfigCount: fpSet.size,
@@ -296,8 +390,15 @@ export function buildExerciseAnalyticsSnapshot(
 
   rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+  const totals: AdminExerciseAnalyticsTotals = {
+    eligibleSessions: eligibleSessions.length,
+    includedSessions: finalIncluded.length,
+    excludedOutlierSessions: Math.max(0, eligibleSessions.length - finalIncluded.length)
+  };
+
   return {
     generatedAt: new Date().toISOString(),
+    totals,
     rows
   };
 }
