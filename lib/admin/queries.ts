@@ -5,6 +5,7 @@ import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
 import { generateRecommendation } from "@/lib/generateRecommendation";
 import { canSubmitWorkoutInputs, parseTrimmedNumberString } from "@/lib/workoutInputValidation";
+import { getMasterExerciseByName } from "@/lib/exercises";
 
 export type AdminUserSummary = {
   userId: string;
@@ -1105,6 +1106,21 @@ async function resolveExerciseForSingleWorkout(
   if (targetReps <= 0 || setCount <= 0 || increment < 0) {
     throw new Error("Exercise target/set/increment values are out of range.");
   }
+  const matchedExisting = userExercises.find(
+    (exercise) =>
+      exercise.name.trim().toLowerCase() === trimmedName.toLowerCase() &&
+      exercise.type === cfg.type &&
+      exercise.targetReps === targetReps &&
+      exercise.setCount === setCount &&
+      exercise.increment === increment &&
+      exercise.unit === (cfg.unit === "kg" ? "kg" : "lbs") &&
+      exercise.trackRir === (cfg.trackRir === true) &&
+      exercise.trackRpe === (cfg.trackRpe === true)
+  );
+  if (matchedExisting) {
+    return matchedExisting;
+  }
+  const matchedMaster = getMasterExerciseByName(trimmedName);
   const created: StoredUserExercise = {
     id: crypto.randomUUID(),
     name: trimmedName,
@@ -1115,7 +1131,7 @@ async function resolveExerciseForSingleWorkout(
     unit: cfg.unit === "kg" ? "kg" : "lbs",
     trackRir: cfg.trackRir === true,
     trackRpe: cfg.trackRpe === true,
-    foundation: 0
+    foundation: matchedMaster?.foundation ?? 0
   };
   const { error: insertExerciseError } = await admin.from("exercises").insert({
     user_id: userId,

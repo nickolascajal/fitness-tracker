@@ -17,6 +17,7 @@ import {
 } from "@/lib/admin/adminDataActions";
 import { supabase } from "@/lib/supabaseClient";
 import { canSubmitWorkoutInputs } from "@/lib/workoutInputValidation";
+import { EXERCISES_BY_LETTER, type MasterExercise } from "@/lib/exercises";
 import { actionButtonClass, actionButtonClasses } from "@/components/action-button";
 import {
   EXERCISE_CONFIG_HELP,
@@ -101,6 +102,7 @@ type PresetExerciseDraft = {
   unit: "lbs" | "kg";
   trackRir: boolean;
   trackRpe: boolean;
+  source?: "user" | "master" | "custom";
 };
 
 type UserExerciseConfig = {
@@ -116,7 +118,8 @@ type UserExerciseConfig = {
   foundation: number;
 };
 
-type SingleExerciseMode = "existing" | "quick";
+type SingleExerciseMode = "existing" | "master" | "quick";
+type ExerciseTypeFilter = "all" | "weight" | "bodyweight" | "time";
 type SingleAddSet = { weight: string; reps: string; timeSeconds: string; rir: string; tir: string; rpe: string };
 
 function addMonths(ymd: string, deltaMonths: number): string {
@@ -191,6 +194,9 @@ export function AdminUserWorkoutsClient({
   const [userExerciseConfigs, setUserExerciseConfigs] = useState<UserExerciseConfig[]>([]);
   const [singleExerciseMode, setSingleExerciseMode] = useState<SingleExerciseMode>("existing");
   const [singleExistingExerciseId, setSingleExistingExerciseId] = useState("");
+  const [singleMasterExerciseName, setSingleMasterExerciseName] = useState("");
+  const [singleExerciseSearch, setSingleExerciseSearch] = useState("");
+  const [singleExerciseTypeFilter, setSingleExerciseTypeFilter] = useState<ExerciseTypeFilter>("all");
   const [singleQuickConfig, setSingleQuickConfig] = useState<PresetExerciseDraft>(initialPresetExerciseDraft);
   const [singleAddMode, setSingleAddMode] = useState<"planned" | "historical">("planned");
   const [singleDraftPrefill, setSingleDraftPrefill] = useState({
@@ -217,10 +223,47 @@ export function AdminUserWorkoutsClient({
   const [editHistoricalSets, setEditHistoricalSets] = useState<SingleAddSet[]>([
     { weight: "", reps: "", timeSeconds: "", rir: "", tir: "", rpe: "" }
   ]);
+  const [presetExerciseSearch, setPresetExerciseSearch] = useState("");
+  const [presetExerciseTypeFilter, setPresetExerciseTypeFilter] = useState<ExerciseTypeFilter>("all");
 
   const adminPresetCfgId = useId();
 
   const selectedPreset = assignablePresets.find((preset) => preset.id === selectedPresetId) ?? null;
+  const allMasterExercises = useMemo<MasterExercise[]>(
+    () =>
+      Object.values(EXERCISES_BY_LETTER)
+        .flatMap((entries) => [...entries])
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    []
+  );
+  const filteredSingleUserExercises = useMemo(() => {
+    const query = singleExerciseSearch.trim().toLowerCase();
+    return userExerciseConfigs.filter((exercise) => {
+      const typeMatch = singleExerciseTypeFilter === "all" || exercise.type === singleExerciseTypeFilter;
+      const nameMatch = query === "" || exercise.name.toLowerCase().includes(query);
+      return typeMatch && nameMatch;
+    });
+  }, [singleExerciseSearch, singleExerciseTypeFilter, userExerciseConfigs]);
+  const filteredSingleMasterExercises = useMemo(() => {
+    const query = singleExerciseSearch.trim().toLowerCase();
+    return allMasterExercises.filter((exercise) => {
+      const typeMatch = singleExerciseTypeFilter === "all" || exercise.type === singleExerciseTypeFilter;
+      const nameMatch = query === "" || exercise.name.toLowerCase().includes(query);
+      return typeMatch && nameMatch;
+    });
+  }, [allMasterExercises, singleExerciseSearch, singleExerciseTypeFilter]);
+  const selectedSingleMasterExercise = useMemo(
+    () => allMasterExercises.find((exercise) => exercise.name === singleMasterExerciseName) ?? null,
+    [allMasterExercises, singleMasterExerciseName]
+  );
+  const filteredPresetMasterExercises = useMemo(() => {
+    const query = presetExerciseSearch.trim().toLowerCase();
+    return allMasterExercises.filter((exercise) => {
+      const typeMatch = presetExerciseTypeFilter === "all" || exercise.type === presetExerciseTypeFilter;
+      const nameMatch = query === "" || exercise.name.toLowerCase().includes(query);
+      return typeMatch && nameMatch;
+    });
+  }, [allMasterExercises, presetExerciseSearch, presetExerciseTypeFilter]);
 
   const historicalAssignInputsValid = useMemo(() => {
     if (!selectedPreset || addWorkoutMode !== "historical") return true;
@@ -274,9 +317,13 @@ export function AdminUserWorkoutsClient({
       if (current && exerciseConfigsRes.data.some((cfg) => cfg.id === current)) return current;
       return exerciseConfigsRes.data[0]?.id ?? "";
     });
+    setSingleMasterExerciseName((current) => {
+      if (current && allMasterExercises.some((exercise) => exercise.name === current)) return current;
+      return allMasterExercises[0]?.name ?? "";
+    });
     setPhase("ready");
     return true;
-  }, [userId]);
+  }, [allMasterExercises, userId]);
 
   useEffect(() => {
     if (!selectedPreset) return;
@@ -436,18 +483,108 @@ export function AdminUserWorkoutsClient({
         </label>
         <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add exercise</p>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <input
+              type="text"
+              value={presetExerciseSearch}
+              onChange={(event) => setPresetExerciseSearch(event.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm"
+              placeholder="Search master exercises..."
+            />
+            <select
+              value={presetExerciseTypeFilter}
+              onChange={(event) => setPresetExerciseTypeFilter(event.target.value as ExerciseTypeFilter)}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm"
+            >
+              <option value="all">All types</option>
+              <option value="weight">Weight</option>
+              <option value="bodyweight">Bodyweight</option>
+              <option value="time">Time</option>
+            </select>
+          </div>
+          <div className="max-h-32 space-y-1 overflow-auto rounded-md border border-slate-200 bg-white p-2">
+            {userExerciseConfigs
+              .filter((exercise) => {
+                const query = presetExerciseSearch.trim().toLowerCase();
+                const typeMatch = presetExerciseTypeFilter === "all" || exercise.type === presetExerciseTypeFilter;
+                const nameMatch = query === "" || exercise.name.toLowerCase().includes(query);
+                return typeMatch && nameMatch;
+              })
+              .slice(0, 8)
+              .map((exercise) => (
+                <button
+                  key={`preset-user-${exercise.id}`}
+                  type="button"
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-100"
+                  onClick={() =>
+                    setPresetExerciseDraft((prev) => ({
+                      ...prev,
+                      name: exercise.name,
+                      exerciseType: exercise.type,
+                      targetMode: exercise.type === "time" ? "time" : "reps",
+                      targetReps: exercise.targetReps,
+                      setCount: exercise.setCount,
+                      increment: exercise.increment,
+                      unit: exercise.unit,
+                      trackRir: exercise.trackRir,
+                      trackRpe: exercise.trackRpe,
+                      source: "user"
+                    }))
+                  }
+                >
+                  <span>{exercise.name}</span>
+                  <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-emerald-700">
+                    User · {exercise.type}
+                  </span>
+                </button>
+              ))}
+            {filteredPresetMasterExercises.slice(0, 12).map((exercise) => (
+              <button
+                key={`preset-master-${exercise.name}`}
+                type="button"
+                className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-100"
+                onClick={() =>
+                  setPresetExerciseDraft((prev) => ({
+                    ...prev,
+                    name: exercise.name,
+                    exerciseType: exercise.type,
+                    targetMode: exercise.type === "time" ? "time" : "reps",
+                    source: "master"
+                  }))
+                }
+              >
+                <span>{exercise.name}</span>
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide">
+                  Master · {exercise.type}
+                </span>
+              </button>
+            ))}
+            {filteredPresetMasterExercises.length === 0 ? (
+              <p className="px-1 text-xs text-slate-500">No master exercises match this filter.</p>
+            ) : null}
+          </div>
           <label className="block space-y-1">
             <span className="text-xs font-medium text-slate-600">Exercise name</span>
             <input
               type="text"
               value={presetExerciseDraft.name}
               onChange={(event) =>
-                setPresetExerciseDraft((prev) => ({ ...prev, name: event.target.value }))
+                setPresetExerciseDraft((prev) => ({ ...prev, name: event.target.value, source: "custom" }))
               }
               className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none ring-slate-300 focus:ring-2"
               placeholder="Exercise name"
             />
           </label>
+          <p className="text-[0.7rem] text-slate-500">
+            Source:{" "}
+            <span className="font-medium text-slate-700">
+              {presetExerciseDraft.source === "master"
+                ? "Master exercise"
+                : presetExerciseDraft.source === "user"
+                  ? "Existing user exercise"
+                  : "Custom typed exercise"}
+            </span>
+          </p>
           <label className="block space-y-1">
             <span className="text-xs font-medium text-slate-600">Exercise type</span>
             <select
@@ -588,10 +725,14 @@ export function AdminUserWorkoutsClient({
             onClick={() => {
               const name = presetExerciseDraft.name.trim();
               if (!name) return;
-              setNewPresetExercises((prev) => [...prev, { ...presetExerciseDraft, name }]);
+              setNewPresetExercises((prev) => [
+                ...prev,
+                { ...presetExerciseDraft, name, source: presetExerciseDraft.source ?? "custom" }
+              ]);
               setPresetExerciseDraft((prev) => ({
                 ...initialPresetExerciseDraft,
-                unit: prev.unit
+                unit: prev.unit,
+                source: "custom"
               }));
             }}
             className={actionButtonClasses.secondary}
@@ -617,7 +758,8 @@ export function AdminUserWorkoutsClient({
                           ? `T ${exercise.targetReps}s`
                           : `T ${exercise.targetReps} reps`}{" "}
                         · +{exercise.increment} {exercise.unit} · RIR/TIR: {exercise.trackRir ? "Y" : "N"} · RPE:{" "}
-                        {exercise.trackRpe ? "Y" : "N"}
+                        {exercise.trackRpe ? "Y" : "N"} · Source:{" "}
+                        {exercise.source === "master" ? "Master" : exercise.source === "user" ? "User" : "Custom"}
                       </p>
                     </div>
                     <button
@@ -817,21 +959,47 @@ export function AdminUserWorkoutsClient({
 
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add single exercise</p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => setSingleExerciseMode("existing")}
                   className={singleExerciseMode === "existing" ? actionButtonClasses.primary : actionButtonClasses.secondary}
                 >
-                  Use existing config
+                  User exercise
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleExerciseMode("master")}
+                  className={singleExerciseMode === "master" ? actionButtonClasses.primary : actionButtonClasses.secondary}
+                >
+                  Master exercise
                 </button>
                 <button
                   type="button"
                   onClick={() => setSingleExerciseMode("quick")}
                   className={singleExerciseMode === "quick" ? actionButtonClasses.primary : actionButtonClasses.secondary}
                 >
-                  Quick create config
+                  Custom typed
                 </button>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                <input
+                  type="text"
+                  value={singleExerciseSearch}
+                  onChange={(event) => setSingleExerciseSearch(event.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm"
+                  placeholder="Search exercises..."
+                />
+                <select
+                  value={singleExerciseTypeFilter}
+                  onChange={(event) => setSingleExerciseTypeFilter(event.target.value as ExerciseTypeFilter)}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm"
+                >
+                  <option value="all">All types</option>
+                  <option value="weight">Weight</option>
+                  <option value="bodyweight">Bodyweight</option>
+                  <option value="time">Time</option>
+                </select>
               </div>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <button
@@ -858,12 +1026,31 @@ export function AdminUserWorkoutsClient({
                     onChange={(event) => setSingleExistingExerciseId(event.target.value)}
                     className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm"
                   >
-                    {userExerciseConfigs.length === 0 ? (
+                    {filteredSingleUserExercises.length === 0 ? (
                       <option value="">No exercise configs found</option>
                     ) : (
-                      userExerciseConfigs.map((cfg) => (
+                      filteredSingleUserExercises.map((cfg) => (
                         <option key={cfg.id} value={cfg.id}>
-                          {cfg.name} ({cfg.type}, {cfg.setCount} sets)
+                          {cfg.name} ({cfg.type}, {cfg.setCount} sets) · User
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              ) : singleExerciseMode === "master" ? (
+                <label className="mt-2 block space-y-1">
+                  <span className="text-xs font-medium text-slate-600">Master exercise</span>
+                  <select
+                    value={singleMasterExerciseName}
+                    onChange={(event) => setSingleMasterExerciseName(event.target.value)}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm"
+                  >
+                    {filteredSingleMasterExercises.length === 0 ? (
+                      <option value="">No master exercises found</option>
+                    ) : (
+                      filteredSingleMasterExercises.map((exercise) => (
+                        <option key={exercise.name} value={exercise.name}>
+                          {exercise.name} ({exercise.type}) · Master
                         </option>
                       ))
                     )}
@@ -910,6 +1097,16 @@ export function AdminUserWorkoutsClient({
                   />
                 </div>
               )}
+              <p className="mt-1 text-[0.7rem] text-slate-500">
+                Source:{" "}
+                <span className="font-medium text-slate-700">
+                  {singleExerciseMode === "existing"
+                    ? "Existing user exercise"
+                    : singleExerciseMode === "master"
+                      ? "Master exercise"
+                      : "Custom typed exercise"}
+                </span>
+              </p>
 
               {singleAddMode === "planned" ? (
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -944,32 +1141,56 @@ export function AdminUserWorkoutsClient({
                     if (!adminAccessToken) return;
                     setAssignMessage(null);
                     setAssignError(null);
+                    if (singleExerciseMode === "master" && !selectedSingleMasterExercise) {
+                      setAssignError("Select a master exercise.");
+                      return;
+                    }
                     setIsSavingWorkout(true);
-                    const payload =
-                      singleExerciseMode === "existing"
-                        ? {
-                            date: assignDate,
-                            mode: singleAddMode,
-                            exerciseId: singleExistingExerciseId,
-                            prefill: singleDraftPrefill,
-                            sets: singleHistoricalSets
-                          }
-                        : {
-                            date: assignDate,
-                            mode: singleAddMode,
-                            exerciseConfig: {
-                              name: singleQuickConfig.name,
-                              type: singleQuickConfig.exerciseType,
-                              targetReps: singleQuickConfig.targetReps,
-                              setCount: singleQuickConfig.setCount,
-                              increment: singleQuickConfig.increment,
-                              unit: singleQuickConfig.unit,
-                              trackRir: singleQuickConfig.trackRir,
-                              trackRpe: singleQuickConfig.trackRpe
-                            },
-                            prefill: singleDraftPrefill,
-                            sets: singleHistoricalSets
-                          };
+                    const payload = (() => {
+                      if (singleExerciseMode === "existing") {
+                        return {
+                          date: assignDate,
+                          mode: singleAddMode,
+                          exerciseId: singleExistingExerciseId,
+                          prefill: singleDraftPrefill,
+                          sets: singleHistoricalSets
+                        };
+                      }
+                      if (singleExerciseMode === "master" && selectedSingleMasterExercise) {
+                        return {
+                          date: assignDate,
+                          mode: singleAddMode,
+                          exerciseConfig: {
+                            name: selectedSingleMasterExercise.name,
+                            type: selectedSingleMasterExercise.type,
+                            targetReps: selectedSingleMasterExercise.type === "time" ? 30 : 8,
+                            setCount: 3,
+                            increment: 5,
+                            unit: "lbs" as const,
+                            trackRir: false,
+                            trackRpe: false
+                          },
+                          prefill: singleDraftPrefill,
+                          sets: singleHistoricalSets
+                        };
+                      }
+                      return {
+                        date: assignDate,
+                        mode: singleAddMode,
+                        exerciseConfig: {
+                          name: singleQuickConfig.name,
+                          type: singleQuickConfig.exerciseType,
+                          targetReps: singleQuickConfig.targetReps,
+                          setCount: singleQuickConfig.setCount,
+                          increment: singleQuickConfig.increment,
+                          unit: singleQuickConfig.unit,
+                          trackRir: singleQuickConfig.trackRir,
+                          trackRpe: singleQuickConfig.trackRpe
+                        },
+                        prefill: singleDraftPrefill,
+                        sets: singleHistoricalSets
+                      };
+                    })();
                     const result = await addAdminSingleWorkoutToUserDateAction(userId, payload, adminAccessToken);
                     if (!result.ok) {
                       setAssignError(result.message);
