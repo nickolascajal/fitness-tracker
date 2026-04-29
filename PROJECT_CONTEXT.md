@@ -358,7 +358,7 @@ Analysis panel (post-submit only):
 * Avg Reps
 * Each metric label includes a subtle `?` help tooltip (shared `components/help-tooltip.tsx` pattern) with concise plain-language definitions
 * Next Session Focus (highlighted)
-* Next Session Focus recommendation copy is shorter and more direct while preserving the same progression triggers and calculation logic
+* Next Session Focus recommendation copy is shorter and more direct while preserving the same progression triggers and calculation logic, including explicit target load text for increase steps (`highest completed working weight + increment`)
 * Raw progression-stage enums are internal-only (still stored/used for logic) and are not shown on the user dashboard
 * Comparison to last time
 * In Analysis Mode, `Inputs` view shows the submitted set rows (weight, reps, and optional RIR/RPE)

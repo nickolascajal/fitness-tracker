@@ -27,6 +27,16 @@ function getSet1WeightPounds(sets: SetInput[]): number | null {
   return parseSetWeight(first.weight);
 }
 
+function getHighestCompletedWorkingWeight(sets: SetInput[]): number | null {
+  let highest: number | null = null;
+  for (const set of sets) {
+    const weight = parseSetWeight(set.weight);
+    if (weight === null) continue;
+    if (highest === null || weight > highest) highest = weight;
+  }
+  return highest;
+}
+
 /**
  * Friendly coaching text for LOAD progression (after a workout is logged).
  *
@@ -49,6 +59,7 @@ export function generateRecommendation(
   const set1Weight = getSet1WeightPounds(sets);
   const set1WeightLabel =
     set1Weight === null ? null : `${formatLoadNumber(set1Weight)} lbs`;
+  const highestWorkingWeight = getHighestCompletedWorkingWeight(sets);
 
   switch (progressionStage) {
     case "S1_REPS":
@@ -69,7 +80,6 @@ export function generateRecommendation(
     case "S2_REPS":
     case "S3_REPS":
     case "S4_REPS":
-      if (!set1WeightLabel) return MISSING_DATA_MESSAGE;
       if (progressionStage === "S2_REPS") {
         return `Bring Set 2 to ${targetReps} reps.`;
       }
@@ -82,8 +92,8 @@ export function generateRecommendation(
       if (!Number.isFinite(increment) || increment <= 0) {
         return MISSING_DATA_MESSAGE;
       }
-      if (set1Weight !== null) {
-        return `Increase to ${formatLoadNumber(set1Weight + increment)} lbs next session.`;
+      if (highestWorkingWeight !== null) {
+        return `Increase to ${formatLoadNumber(highestWorkingWeight + increment)} lbs next session.`;
       }
       return `Increase weight by ${formatLoadNumber(increment)} next session.`;
     }

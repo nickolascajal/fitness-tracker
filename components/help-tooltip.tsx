@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /** Tooltip copy for exercise/workout configuration fields (shared across app forms). */
 export const EXERCISE_CONFIG_HELP = {
@@ -23,7 +24,17 @@ type HelpTooltipProps = {
 
 export function HelpTooltip({ text, label = "Help" }: HelpTooltipProps) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0
+  });
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -41,9 +52,31 @@ export function HelpTooltip({ text, label = "Help" }: HelpTooltipProps) {
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const viewportW = window.innerWidth;
+      const maxPanelWidth = Math.min(viewportW - 16, 256);
+      const left = Math.min(Math.max(8, rect.left), Math.max(8, viewportW - maxPanelWidth - 8));
+      const top = Math.min(window.innerHeight - 8, rect.bottom + 6);
+      setPanelStyle({ top, left });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
   return (
     <div className="relative inline-flex items-center" ref={rootRef}>
       <button
+        ref={buttonRef}
         type="button"
         className="group -m-2 inline-flex shrink-0 touch-manipulation items-center justify-center rounded-full p-2 text-[0.6rem] font-medium leading-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
         aria-expanded={open}
@@ -57,23 +90,27 @@ export function HelpTooltip({ text, label = "Help" }: HelpTooltipProps) {
           ?
         </span>
       </button>
-      {open ? (
-        <div
-          className="absolute left-0 top-full z-[60] mt-1 w-[min(100vw-2rem,16rem)] rounded-md border border-slate-200 bg-white p-2.5 text-xs leading-snug text-slate-700 shadow-lg"
-          role="dialog"
-          aria-modal="true"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <p>{text}</p>
-          <button
-            type="button"
-            className="mt-2 text-xs font-medium text-slate-500 underline hover:text-slate-800"
-            onClick={() => setOpen(false)}
-          >
-            Close
-          </button>
-        </div>
-      ) : null}
+      {open && mounted
+        ? createPortal(
+            <div
+              className="fixed z-[100] w-[min(calc(100vw-1rem),16rem)] rounded-md border border-slate-200 bg-white p-2.5 text-xs leading-snug text-slate-700 shadow-lg"
+              style={{ top: panelStyle.top, left: panelStyle.left }}
+              role="dialog"
+              aria-modal="true"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <p>{text}</p>
+              <button
+                type="button"
+                className="mt-2 text-xs font-medium text-slate-500 underline hover:text-slate-800"
+                onClick={() => setOpen(false)}
+              >
+                Close
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
