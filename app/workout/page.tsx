@@ -247,14 +247,6 @@ function formatCps(value: number | null): string {
   return rounded.toFixed(1);
 }
 
-function formatCpsChange(current: number | null, previous: number | null): string {
-  if (current === null || previous === null) return "—";
-  const diff = current - previous;
-  if (Math.abs(diff) < 0.05) return "0";
-  if (diff > 0) return `+${formatCps(diff)}`;
-  return formatCps(diff);
-}
-
 function computeCpsPercentChange(current: number | null, previous: number | null): number | null {
   if (current === null || previous === null) return null;
   if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
@@ -3717,10 +3709,10 @@ export default function WorkoutPage() {
                           This is your first logged session for this exercise.
                         </p>
                       ) : (
-                        <div className="mt-3 space-y-5">
+                        <div className="mt-2.5 space-y-3.5">
                           <div>
                             <p className="text-sm font-semibold text-slate-900">Performance Score (CPS)</p>
-                            <dl className="mt-2 grid gap-2.5 text-sm sm:grid-cols-2">
+                            <dl className="mt-1.5 grid gap-2 text-sm sm:grid-cols-2">
                               <div>
                                 <dt className="text-slate-500">Current CPS</dt>
                                 <dd className="font-semibold text-slate-900">{formatCps(submission.sessionCps)}</dd>
@@ -3743,13 +3735,6 @@ export default function WorkoutPage() {
                                 </dd>
                               </div>
                               <div>
-                                <dt className="text-slate-500">Raw CPS diff</dt>
-                                <dd className="font-semibold text-slate-900">
-                                  {formatCpsChange(submission.sessionCps, submission.previousCps)}
-                                  {submission.sessionCps !== null && submission.previousCps !== null ? " CPS" : ""}
-                                </dd>
-                              </div>
-                              <div>
                                 <dt className="text-slate-500">Status</dt>
                                 <dd className="text-slate-900">
                                   {statusIndicator(
@@ -3759,9 +3744,9 @@ export default function WorkoutPage() {
                               </div>
                             </dl>
                           </div>
-                          <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-2.5">
+                          <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-2">
                             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Volume</p>
-                            <dl className="mt-1.5 grid gap-2 text-xs sm:grid-cols-2 sm:gap-2.5">
+                            <dl className="mt-1 grid gap-1.5 text-xs sm:grid-cols-2 sm:gap-2">
                               <div>
                                 <dt className="text-slate-400">Current volume</dt>
                                 <dd className="font-medium text-slate-600">

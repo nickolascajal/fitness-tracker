@@ -360,6 +360,7 @@ Analysis panel (post-submit only):
 * Raw progression-stage enums are internal-only (still stored/used for logic) and are not shown on the user dashboard
 * Comparison to last time
 * In Analysis Mode, `Inputs` view shows the submitted set rows (weight, reps, and optional RIR/RPE)
+* The `Compare to last time` section no longer shows a separate raw CPS diff row (the Change row remains the single CPS delta source) and uses a tighter compact layout
 
 ---
 
