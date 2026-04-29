@@ -27,6 +27,7 @@ import { ActionButton, actionButtonClass, actionButtonClasses } from "@/componen
 import {
   EXERCISE_CONFIG_HELP,
   FieldLabelHelp,
+  HelpTooltip,
   TrackCheckboxRow
 } from "@/components/help-tooltip";
 
@@ -3274,27 +3275,57 @@ export default function WorkoutPage() {
                           <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
                             {formatCps(submission.sessionCps)}
                           </p>
-                          <p className="mt-1 text-xs font-medium leading-tight text-slate-500">
-                            Performance Score (CPS)
-                          </p>
+                          <div className="mt-1 flex items-center gap-1 text-xs font-medium leading-tight text-slate-500">
+                            <span>Performance Score (CPS)</span>
+                            <span className="opacity-80">
+                              <HelpTooltip
+                                label="About Performance Score (CPS)"
+                                text="Combines your weight, reps, and target completion into one score to track performance progress."
+                              />
+                            </span>
+                          </div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2.5 sm:px-3">
                           <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
                             {formatVolume(submission.sessionVolume)} {submission.exerciseUnit}
                           </p>
-                          <p className="mt-1 text-xs font-medium leading-tight text-slate-500">Volume</p>
+                          <div className="mt-1 flex items-center gap-1 text-xs font-medium leading-tight text-slate-500">
+                            <span>Volume</span>
+                            <span className="opacity-80">
+                              <HelpTooltip
+                                label="About Volume"
+                                text="Total weight moved during this workout."
+                              />
+                            </span>
+                          </div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2.5 sm:px-3">
                           <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
                             {formatOneDecimal(submission.avgWeight)} {submission.exerciseUnit}
                           </p>
-                          <p className="mt-1 text-xs font-medium leading-tight text-slate-500">Avg Weight</p>
+                          <div className="mt-1 flex items-center gap-1 text-xs font-medium leading-tight text-slate-500">
+                            <span>Avg Weight</span>
+                            <span className="opacity-80">
+                              <HelpTooltip
+                                label="About Avg Weight"
+                                text="Average weight used across completed sets."
+                              />
+                            </span>
+                          </div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2.5 sm:px-3">
                           <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
                             {formatOneDecimal(submission.avgReps)}
                           </p>
-                          <p className="mt-1 text-xs font-medium leading-tight text-slate-500">Avg Reps</p>
+                          <div className="mt-1 flex items-center gap-1 text-xs font-medium leading-tight text-slate-500">
+                            <span>Avg Reps</span>
+                            <span className="opacity-80">
+                              <HelpTooltip
+                                label="About Avg Reps"
+                                text="Average reps completed across all sets."
+                              />
+                            </span>
+                          </div>
                         </div>
                       </div>
 

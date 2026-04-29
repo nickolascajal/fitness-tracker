@@ -52,37 +52,40 @@ export function generateRecommendation(
 
   switch (progressionStage) {
     case "S1_REPS":
-      return `Get your first set to ${targetReps} reps before progressing.`;
+      return `Bring Set 1 to ${targetReps} reps.`;
 
     case "S2_WEIGHT":
     case "S3_WEIGHT":
     case "S4_WEIGHT":
       if (!set1WeightLabel) return MISSING_DATA_MESSAGE;
       if (progressionStage === "S2_WEIGHT") {
-        return `Get your 2nd set up to ${set1WeightLabel}.`;
+        return "Match Set 1 weight on Set 2.";
       }
       if (progressionStage === "S3_WEIGHT") {
-        return `Get your 3rd set up to ${set1WeightLabel}.`;
+        return "Match Set 1 weight on Set 3.";
       }
-      return `Get your 4th set up to ${set1WeightLabel}.`;
+      return "Match Set 1 weight on Set 4.";
 
     case "S2_REPS":
     case "S3_REPS":
     case "S4_REPS":
       if (!set1WeightLabel) return MISSING_DATA_MESSAGE;
       if (progressionStage === "S2_REPS") {
-        return `Keep your 2nd set at ${set1WeightLabel} and bring it to ${targetReps} reps.`;
+        return `Bring Set 2 to ${targetReps} reps.`;
       }
       if (progressionStage === "S3_REPS") {
-        return `Keep your 3rd set at ${set1WeightLabel} and bring it to ${targetReps} reps.`;
+        return `Bring Set 3 to ${targetReps} reps.`;
       }
-      return `Keep your 4th set at ${set1WeightLabel} and bring it to ${targetReps} reps.`;
+      return `Bring Set 4 to ${targetReps} reps.`;
 
     case "INCREASE_WEIGHT": {
       if (!Number.isFinite(increment) || increment <= 0) {
         return MISSING_DATA_MESSAGE;
       }
-      return `All sets hit target — increase weight by ${formatLoadNumber(increment)} next session.`;
+      if (set1Weight !== null) {
+        return `Increase to ${formatLoadNumber(set1Weight + increment)} lbs next session.`;
+      }
+      return `Increase weight by ${formatLoadNumber(increment)} next session.`;
     }
 
     default:
