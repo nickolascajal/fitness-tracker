@@ -3457,14 +3457,6 @@ export default function WorkoutPage() {
                         </p>
                       </div>
 
-                      <dl className="mt-4 text-sm">
-                        <div>
-                          <dt className="text-slate-500">Progression stage</dt>
-                          <dd className="mt-0.5 font-mono font-semibold text-slate-900">
-                            {submission.stageLabel}
-                          </dd>
-                        </div>
-                      </dl>
                       <span className="sr-only">
                         standardized-improvement:{Math.round(standardizedImprovement * 100)}
                       </span>

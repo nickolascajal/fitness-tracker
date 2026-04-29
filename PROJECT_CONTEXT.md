@@ -357,7 +357,7 @@ Analysis panel (post-submit only):
 * Avg Weight
 * Avg Reps
 * Next Session Focus (highlighted)
-* Progression stage (de-emphasized)
+* Raw progression-stage enums are internal-only (still stored/used for logic) and are not shown on the user dashboard
 * Comparison to last time
 * In Analysis Mode, `Inputs` view shows the submitted set rows (weight, reps, and optional RIR/RPE)
 
