@@ -115,9 +115,17 @@ export function AdminDashboardClient({ expectedAdminEmail }: { expectedAdminEmai
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight text-slate-900">Overview</h2>
-        <p className="mt-1 text-sm text-slate-600">Read-only overview (beta).</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-900">Overview</h2>
+          <p className="mt-1 text-sm text-slate-600">Read-only overview (beta).</p>
+        </div>
+        <Link
+          href="/admin/exercises"
+          className="text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-600"
+        >
+          Exercise Analytics
+        </Link>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

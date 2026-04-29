@@ -14,6 +14,7 @@ import {
   cleanupOrphanedRows,
   createPresetForUser,
   getAssignablePresetsForUser,
+  getAdminExerciseAnalyticsDatabase,
   getAdminOverview,
   getUserWorkoutsForAdmin,
   type AdminAddHistoricalPresetInput,
@@ -33,6 +34,7 @@ import {
   type AdminUserWorkoutRow,
   updateUserWorkoutForAdmin
 } from "./queries";
+import type { AdminExerciseAnalyticsSnapshot } from "./exerciseAnalyticsAggregate";
 
 export type AdminOverviewActionResult =
   | { ok: true; data: AdminOverview }
@@ -127,6 +129,14 @@ export type AdminDeleteWorkoutActionResult =
   | {
       ok: false;
       code: "no_token" | "invalid_token" | "not_admin" | "config" | "data" | "bad_request";
+      message: string;
+    };
+
+export type AdminExerciseAnalyticsActionResult =
+  | { ok: true; data: AdminExerciseAnalyticsSnapshot }
+  | {
+      ok: false;
+      code: "no_token" | "invalid_token" | "not_admin" | "config" | "data";
       message: string;
     };
 
@@ -540,6 +550,29 @@ export async function deleteAdminUserWorkoutAction(
       ok: false,
       code: "data",
       message: error instanceof Error && error.message ? error.message : "Could not delete workout."
+    };
+  }
+}
+
+export async function fetchAdminExerciseAnalyticsAction(
+  accessToken: string
+): Promise<AdminExerciseAnalyticsActionResult> {
+  noStore();
+  const gate = await assertAdminSessionOnServer(accessToken);
+  if (!gate.ok) {
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  try {
+    const data = await getAdminExerciseAnalyticsDatabase();
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "data",
+      message:
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not load exercise analytics. Check server logs."
     };
   }
 }

@@ -1,5 +1,9 @@
 import { getServiceRoleSupabase } from "./supabaseServiceRole";
 import { parseWorkoutEntryFromJson, type AdminWorkoutDisplayEntry } from "./parseWorkoutEntry";
+import {
+  buildExerciseAnalyticsSnapshot,
+  type AdminExerciseAnalyticsSnapshot
+} from "./exerciseAnalyticsAggregate";
 import { unstable_noStore as noStore } from "next/cache";
 import { calculateCPSWithOptions } from "@/lib/calculateCPS";
 import { calculateProgressionStage } from "@/lib/calculateProgressionStage";
@@ -1403,4 +1407,35 @@ export function groupWorkoutsByDate(rows: AdminUserWorkoutRow[]): Map<string, Ad
     ordered.set(k, map.get(k)!);
   }
   return ordered;
+}
+
+const ANALYTICS_PAGE_SIZE = 1000;
+
+async function fetchAllRowsForExerciseAnalytics(
+  admin: ReturnType<typeof getServiceRoleSupabase>,
+  table: "exercises" | "workouts",
+  select: string
+): Promise<Array<{ user_id: string; data?: unknown }>> {
+  const out: Array<{ user_id: string; data?: unknown }> = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await admin.from(table).select(select).range(from, from + ANALYTICS_PAGE_SIZE - 1);
+    if (error) {
+      throw new Error(`Failed to read ${table} for analytics: ${error.message}`);
+    }
+    const chunk = (data ?? []) as unknown as Array<{ user_id: string; data?: unknown }>;
+    out.push(...chunk);
+    if (chunk.length < ANALYTICS_PAGE_SIZE) break;
+    from += ANALYTICS_PAGE_SIZE;
+  }
+  return out;
+}
+
+/** Read-only cross-user exercise + CPS aggregates for admin research (server-only, service role). */
+export async function getAdminExerciseAnalyticsDatabase(): Promise<AdminExerciseAnalyticsSnapshot> {
+  noStore();
+  const admin = getServiceRoleSupabase();
+  const exerciseRows = await fetchAllRowsForExerciseAnalytics(admin, "exercises", "user_id,data");
+  const workoutRows = await fetchAllRowsForExerciseAnalytics(admin, "workouts", "user_id,data");
+  return buildExerciseAnalyticsSnapshot(exerciseRows, workoutRows);
 }

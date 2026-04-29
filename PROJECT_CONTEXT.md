@@ -745,7 +745,8 @@ Deployment notes:
 
 - **Purpose:** coaching/admin view of all user data stored in Supabase (`workouts`, `exercises`, `presets`) plus auth emails, with scoped admin-only actions for safe user-data operations.
 - **Routes:**
-  - `/admin` — aggregate totals and per-user counts; link to per-user detail.
+  - `/admin` — aggregate totals and per-user counts; link to per-user detail and **Exercise Analytics**.
+  - `/admin/exercises` — **Exercise Analytics Database** (read-only): cross-user aggregates grouped by `exerciseNameKey` (`lib/exerciseNameKey.ts`); each row expands to show distinct exercise configs (from `exercises.data`) with user counts, session counts, CPS high/low/average from completed non-draft workouts (`workouts.data`, matched by `exerciseId`, with name+config fallback only when a single config matches that user). No individual user identities or emails on this page.
   - `/admin/user/[userId]` — workout history for one user, grouped by date, with sets, CPS, recommendations, and timestamps (parsed from `workouts.data` JSON).
 - **Access control (server-side):**
   - No global middleware is used for admin auth.
